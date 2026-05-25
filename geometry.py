@@ -37,16 +37,7 @@ def _resolve_slopes(dims: dict) -> tuple:
 
 
 # ---------------------------------------------------------------------------
-# 3. Corner Fillet Area Reduction
-# ---------------------------------------------------------------------------
-
-def _fillet_area_loss(radius: float) -> float:
-    """Area removed by 4 quarter-circle corner fillets: (4 - π) × R²."""
-    return (4.0 - math.pi) * radius ** 2 if radius > 0.0 else 0.0
-
-
-# ---------------------------------------------------------------------------
-# 4. Volume Formulae
+# 3. Volume Formulae
 # ---------------------------------------------------------------------------
 
 def _prismatoid_volume(a_bot: float, a_top: float, h: float) -> float:
@@ -59,7 +50,6 @@ def _compute_frustum(dims: dict) -> dict:
     w_bot = parse_dim(dims['width_bottom'])
     h     = parse_dim(dims['total_height'])
     d     = parse_dim(dims['water_depth'])
-    R     = parse_dim(dims.get('corner_fillet_radius_m') or 0.0)
 
     s_n, s_s, s_e, s_w = _resolve_slopes(dims)
 
@@ -71,16 +61,15 @@ def _compute_frustum(dims: dict) -> dict:
         l_top = l_bot + h * s_w + h * s_e
         w_top = w_bot + h * s_s + h * s_n
 
-    a_loss    = _fillet_area_loss(R)
-    a_bot_net = l_bot * w_bot - a_loss
-    a_top_net = l_top * w_top - a_loss
-    v_total   = _prismatoid_volume(a_bot_net, a_top_net, h)
+    a_bot   = l_bot * w_bot
+    a_top   = l_top * w_top
+    v_total = _prismatoid_volume(a_bot, a_top, h)
 
     # Water plane interpolated at depth d using per-side slopes
-    l_water   = l_bot + d * s_w + d * s_e
-    w_water   = w_bot + d * s_s + d * s_n
-    a_water   = l_water * w_water - a_loss
-    v_water   = _prismatoid_volume(a_bot_net, a_water, d)
+    l_water = l_bot + d * s_w + d * s_e
+    w_water = w_bot + d * s_s + d * s_n
+    a_water = l_water * w_water
+    v_water = _prismatoid_volume(a_bot, a_water, d)
 
     return {
         'l_bottom': l_bot, 'w_bottom': w_bot,
@@ -88,7 +77,6 @@ def _compute_frustum(dims: dict) -> dict:
         'outer_footprint_x': l_top,
         'outer_footprint_y': w_top,
         'slopes': {'N': s_n, 'S': s_s, 'E': s_e, 'W': s_w},
-        'a_loss': a_loss,
         'total_height': h,
         'water_depth': d,
         'v_water': v_water,
@@ -102,24 +90,20 @@ def _compute_rectangular(dims: dict) -> dict:
     h     = parse_dim(dims['total_height'])
     d     = parse_dim(dims['water_depth'])
     tw    = parse_dim(dims.get('wall_thickness') or 0.0)
-    R     = parse_dim(dims.get('corner_fillet_radius_m') or 0.0)
 
-    a_loss  = _fillet_area_loss(R)
-    v_water = (l_int * w_int - a_loss) * d
+    v_water = l_int * w_int * d
 
     l_outer = l_int + 2.0 * tw
     w_outer = w_int + 2.0 * tw
     v_total = l_outer * w_outer * h
 
-    # Concrete = outer box minus inner void; fillet corners are solid concrete
-    v_concrete = (l_outer * w_outer - l_int * w_int + a_loss) * h
+    v_concrete = (l_outer * w_outer - l_int * w_int) * h
 
     return {
         'l_internal': l_int, 'w_internal': w_int,
         'l_outer': l_outer,  'w_outer': w_outer,
         'outer_footprint_x': l_outer,
         'outer_footprint_y': w_outer,
-        'a_loss': a_loss,
         'total_height': h,
         'water_depth': d,
         'v_water': v_water,

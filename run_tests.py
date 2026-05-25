@@ -28,9 +28,8 @@ TOL = 1e-2   # 0.01 m³ / 0.01 m tolerance
 #   l_water=28.4, w_water=16.3, A_water=462.92
 #   V_water = (4.2/3)*(200+462.92+sqrt(92584)) = 1.4*967.195 = 1354.073
 #
-# B02  Rectangular  l=25, w=avg(12.0,12.2)=12.1, tw=0.4, R=0.5
-#   A_loss = (4-pi)*0.25 = 0.2146
-#   V_water = (302.5-0.2146)*3.8 = 1148.685
+# B02  Rectangular  l=25, w=avg(12.0,12.2)=12.1, tw=0.4
+#   V_water = 25*12.1*3.8 = 1149.95
 #   l_outer=25.8, w_outer=12.9, V_total=25.8*12.9*5=1664.1
 #
 # B03  Circular  d_int=15, tw=0.4
@@ -55,12 +54,10 @@ EXPECTED = {
     },
     'B02': {
         'l_outer': 25.8, 'w_outer': 12.9,
-        'a_loss': (4 - math.pi) * 0.25,
-        'v_water': 1148.685,
+        'v_water': 25.0 * 12.1 * 3.8,
         'v_total_excavation': 1664.1,
-        # Concrete = (L_outer*W_outer - L_int*W_int + A_loss) * h
-        # = (25.8*12.9 - 25.0*12.1 + (4-pi)*0.25) * 5.0
-        'v_concrete': (25.8 * 12.9 - 25.0 * 12.1 + (4 - math.pi) * 0.25) * 5.0,
+        # Concrete = (L_outer*W_outer - L_int*W_int) * h
+        'v_concrete': (25.8 * 12.9 - 25.0 * 12.1) * 5.0,
         'x_start': 72.0, 'x_end': 97.8,
         'y_start': 0.0,  'y_end': 12.9,
     },
@@ -126,7 +123,6 @@ add('B01-Alt', 'Y_end (m)                ', c['y_end'],               EXPECTED['
 g = by_id['B02']['geometry']
 c = by_id['B02']['coordinates']
 add('B02', 'w_int (avg 12.0,12.2)    ', g['w_internal'],          12.1)
-add('B02', 'A_loss fillet (m²)       ', g['a_loss'],              EXPECTED['B02']['a_loss'])
 add('B02', 'l_outer (m)              ', g['l_outer'],             EXPECTED['B02']['l_outer'])
 add('B02', 'w_outer (m)              ', g['w_outer'],             EXPECTED['B02']['w_outer'])
 add('B02', 'V_water (m³)             ', g['v_water'],             EXPECTED['B02']['v_water'])

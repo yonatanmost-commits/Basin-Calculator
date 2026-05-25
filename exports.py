@@ -25,8 +25,7 @@ def _raw_dim_string(dims: dict, stype: str) -> str:
         return (f"L={dims.get('length_internal','')} "
                 f"W={dims.get('width_internal','')} "
                 f"h={dims.get('total_height','')} "
-                f"tw={dims.get('wall_thickness',0)} "
-                f"R={dims.get('corner_fillet_radius_m',0)}")
+                f"tw={dims.get('wall_thickness',0)}")
     if stype == 'circular':
         return (f"D={dims.get('diameter_internal','')} "
                 f"h={dims.get('total_height','')} "

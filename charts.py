@@ -65,7 +65,6 @@ def make_2d_blueprint(results: list) -> go.Figure:
 
         if stype == 'frustum':
             sl = g['slopes']
-            # Outer = top opening
             ox, oy = _closed_rect_xy(x0, y0, x1, y1)
             traces.append(go.Scatter(
                 x=ox, y=oy, mode='lines', fill='toself',
@@ -73,7 +72,6 @@ def make_2d_blueprint(results: list) -> go.Figure:
                 line=dict(color=GREY_OUTER, width=2),
                 showlegend=False, hoverinfo='skip',
             ))
-            # Inner = bottom footprint (positioned using per-side slopes)
             ix0 = x0 + h * sl['W']
             ix1 = x1 - h * sl['E']
             iy0 = y0 + h * sl['S']
@@ -115,17 +113,6 @@ def make_2d_blueprint(results: list) -> go.Figure:
             traces.append(go.Scatter(
                 x=ix, y=iy, mode='lines',
                 line=dict(color=BLUE_INNER, width=1.5, dash='dash'),
-                showlegend=False, hoverinfo='skip',
-            ))
-
-        # Fillet annotation in plan
-        if g.get('a_loss', 0) > 0:
-            R = math.sqrt(g['a_loss'] / (4 - math.pi))
-            traces.append(go.Scatter(
-                x=[cx], y=[y1 + 0.5],
-                mode='text',
-                text=[f'R={R:.2f} m'],
-                textfont=dict(size=9, color='#888888'),
                 showlegend=False, hoverinfo='skip',
             ))
 
@@ -207,6 +194,28 @@ def _cylinder_side(radius, z_bot, z_top, color, opacity, name, n=72):
     )
 
 
+def _solid_cylinder_mesh(r, z_bot, z_top, color, opacity, name, n=48):
+    """Closed solid cylinder as Mesh3d — renders correctly behind transparent surfaces."""
+    xs, ys, zs = [0.0, 0.0], [0.0, 0.0], [z_bot, z_top]  # indices 0=bot centre, 1=top centre
+    for i in range(n):
+        theta = 2 * math.pi * i / n
+        xs += [r * math.cos(theta), r * math.cos(theta)]
+        ys += [r * math.sin(theta), r * math.sin(theta)]
+        zs += [z_bot, z_top]
+    ii, jj, kk = [], [], []
+    for i in range(n):
+        ni = (i + 1) % n
+        b, bn = 2 + 2*i, 2 + 2*ni
+        t, tn = 3 + 2*i, 3 + 2*ni
+        ii += [0, 1,  b,  bn]; jj += [b,  tn, bn,  tn]; kk += [bn, t,  t,   t]
+    return go.Mesh3d(
+        x=xs, y=ys, z=zs, i=ii, j=jj, k=kk,
+        color=color, opacity=opacity,
+        name=name, showlegend=True, flatshading=False,
+        lighting=dict(ambient=0.6, diffuse=0.8),
+    )
+
+
 def _disk_surface(radius, z, color, opacity, n=72):
     """Flat filled disk at height z via go.Surface (r from 0 → radius)."""
     theta = [2 * math.pi * i / n for i in range(n + 1)]
@@ -227,7 +236,6 @@ def make_3d_box(result: dict) -> go.Figure:
     """
     Aspect-ratio-locked 3D view of one structure.
     Concrete shell: semi-transparent grey.  Water block: solid blue.
-    Fillet radius shown as text annotation — mesh is not deformed.
     """
     g     = result['geometry']
     stype = result['type']
@@ -272,29 +280,14 @@ def make_3d_box(result: dict) -> go.Figure:
     elif stype == 'circular':
         r_out = g['d_outer']    / 2
         r_in  = g['d_internal'] / 2
-        # Outer concrete wall — side surface only (no overlapping solid interiors)
-        traces.append(_cylinder_side(r_out, 0, h, GREY_FILL,  0.45, 'Concrete shell'))
-        # Inner wall of concrete (annular top view)
-        traces.append(_cylinder_side(r_in,  0, h, GREY_FILL,  0.20, None))
-        # Water body side + top disk surface
-        traces.append(_cylinder_side(r_in,  0, d, BLUE_WATER, 0.55, f'Water  d = {d:.2f} m'))
-        traces.append(_disk_surface(r_in, d, BLUE_WATER, 0.85))
-
-    # Fillet annotation (no mesh deformation per spec)
-    if g.get('a_loss', 0) > 0:
-        R = math.sqrt(g['a_loss'] / (4 - math.pi))
-        annotations.append(dict(
-            x=0, y=0, z=h * 1.05,
-            text=f'Fillet Radius: {R:.2f} m',
-            showarrow=False,
-            font=dict(size=12, color='#555555'),
-        ))
+        traces.append(_solid_cylinder_mesh(r_in, 0, d, BLUE_WATER, 0.85, f'Water  d = {d:.2f} m'))
+        traces.append(_cylinder_side(r_out, 0, h, GREY_FILL, 0.25, 'Concrete shell'))
 
     # Concrete volume annotation
     vc = g.get('v_concrete')
     if vc is not None:
         annotations.append(dict(
-            x=0, y=0, z=h * 1.15,
+            x=0, y=0, z=h * 1.05,
             text=f'V_concrete: {vc:.2f} m3',
             showarrow=False,
             font=dict(size=12, color='#555555'),
