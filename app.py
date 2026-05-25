@@ -13,7 +13,7 @@ import pandas as pd
 import streamlit as st
 
 from charts import make_2d_blueprint, make_3d_box
-from exports import export_cad, export_excel
+from exports import export_cad, export_excel, read_basins_sheet, write_results_sheet
 from geometry import compute_layout_coordinates
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -234,6 +234,46 @@ def _dxf_bytes(results_json: str) -> bytes:
 # ─────────────────────────────────────────────────────────────────────────────
 # UI
 # ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Sidebar — Process Excel upload / export
+# ─────────────────────────────────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown("### Process Excel")
+    uploaded = st.file_uploader("Upload process Excel", type=["xlsx"], key="proc_upload")
+    if uploaded is not None:
+        if st.session_state.get("_proc_upload_name") != uploaded.name:
+            try:
+                file_bytes = uploaded.read()
+                new_structs = read_basins_sheet(file_bytes)
+                st.session_state.structures         = new_structs
+                st.session_state._proc_upload_name  = uploaded.name
+                st.session_state._proc_upload_bytes = file_bytes
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Could not read Basins sheet: {exc}")
+
+    if st.session_state.get("_proc_upload_bytes") and st.session_state.get("_proc_upload_name"):
+        st.caption(f"Loaded: {st.session_state._proc_upload_name}")
+
+    st.markdown("---")
+    st.markdown("**Template**")
+    @st.cache_data(show_spinner=False)
+    def _template_bytes() -> bytes:
+        from exports import create_process_template
+        import tempfile, os
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "process_template.xlsx")
+            create_process_template(path)
+            return open(path, "rb").read()
+
+    st.download_button(
+        "Download process template",
+        data=_template_bytes(),
+        file_name="process_template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        width="stretch",
+    )
+
 st.markdown("### Basin Geometry Engineering Dashboard")
 
 # ── Seed X/Y from auto-layout the first time each structure appears ───────────
@@ -377,7 +417,8 @@ if ok:
         st.plotly_chart(fig3d, width="stretch")
 
     # ── Downloads ─────────────────────────────────────────────────────────
-    d1, d2, _ = st.columns([1, 1, 5])
+    proc_bytes = st.session_state.get("_proc_upload_bytes")
+    d1, d2, d3, _ = st.columns([1, 1, 1, 3])
     with d1:
         st.download_button("⬇ Export Excel", data=_excel_bytes(results_json),
                            file_name="basin_summary.xlsx",
@@ -387,3 +428,13 @@ if ok:
         st.download_button("⬇ Export DXF", data=_dxf_bytes(results_json),
                            file_name="site_plan.dxf", mime="application/octet-stream",
                            width="stretch")
+    if proc_bytes:
+        with d3:
+            fname = st.session_state.get("_proc_upload_name", "process_results.xlsx")
+            st.download_button(
+                "⬇ Export to Process Excel",
+                data=write_results_sheet(proc_bytes, results),
+                file_name=fname,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                width="stretch",
+            )

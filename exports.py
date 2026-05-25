@@ -141,7 +141,211 @@ def export_excel(results: list, template_path: str, output_path: str = None) -> 
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 2. CAD Engine (DXF)
+# 2. Process Excel — round-trip (read Basins sheet, write Basin Results sheet)
+# ─────────────────────────────────────────────────────────────────────────────
+
+BASINS_SHEET  = 'Basins'
+RESULTS_SHEET = 'Basin Results'
+
+BASINS_HEADERS = [
+    'ID', 'Name', 'Type', 'Length / Diam (int.)', 'Width (int.)',
+    'Height (m)', 'Water Depth (m)', 'Wall Thick (m)', 'Slope', 'X (m)', 'Y (m)',
+]
+
+RESULTS_HEADERS = [
+    'ID', 'Name', 'Type',
+    'V_water (m3)', 'V_excav (m3)', 'V_concrete (m3)',
+    'Footprint X (m)', 'Footprint Y (m)',
+    'X start (m)', 'X end (m)', 'Y start (m)', 'Y end (m)',
+]
+
+
+def _safe_float(v, default=0.0):
+    try:
+        return float(v) if v is not None else default
+    except (ValueError, TypeError):
+        return default
+
+
+def read_basins_sheet(file_bytes: bytes) -> list:
+    """Parse the Basins sheet from uploaded workbook bytes → list of structure dicts."""
+    import io
+    try:
+        import openpyxl
+    except ImportError:
+        raise ImportError("openpyxl required: pip install openpyxl")
+
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes))
+    if BASINS_SHEET not in wb.sheetnames:
+        raise ValueError(f"Sheet '{BASINS_SHEET}' not found in uploaded workbook.")
+    ws = wb[BASINS_SHEET]
+
+    # Locate header row by 'ID' sentinel
+    header_row = None
+    for i, row in enumerate(ws.iter_rows(min_col=1, max_col=1, values_only=True), start=1):
+        if str(row[0]).strip() == 'ID':
+            header_row = i
+            break
+    if header_row is None:
+        raise ValueError("Could not find header row (cell with 'ID') in Basins sheet.")
+
+    structures = []
+    for row in ws.iter_rows(min_row=header_row + 1, values_only=True):
+        sid = str(row[0]).strip() if row[0] is not None else ''
+        if not sid or sid.lower() == 'none':
+            continue
+
+        name    = str(row[1]) if row[1] is not None else sid
+        df_type = str(row[2]).strip().lower() if row[2] is not None else 'frustum'
+        length  = str(row[3]) if row[3] is not None else ''
+        width   = str(row[4]) if row[4] is not None else ''
+        height  = _safe_float(row[5], 1.0)
+        depth   = _safe_float(row[6], 0.5)
+        wall_t  = _safe_float(row[7], 0.0)
+        slope   = str(row[8]) if row[8] is not None else '1.0'
+        x_pos   = row[9]
+        y_pos   = _safe_float(row[10], 0.0)
+
+        internal_type = 'frustum' if df_type in ('frustum', 'uneven frustum') else df_type
+        dims = {'total_height': height, 'water_depth': depth}
+
+        if df_type in ('frustum', 'uneven frustum'):
+            dims['length_bottom'] = length
+            dims['width_bottom']  = width
+            dims['wall_thickness'] = 0.0
+            parts = [p.strip() for p in slope.split(';')]
+            if len(parts) == 4:
+                dims['uneven_slopes_enabled'] = True
+                dims['slope_north']   = _safe_float(parts[0])
+                dims['slope_south']   = _safe_float(parts[1])
+                dims['slope_east']    = _safe_float(parts[2])
+                dims['slope_west']    = _safe_float(parts[3])
+                dims['slope_uniform'] = None
+            else:
+                dims['uneven_slopes_enabled'] = False
+                dims['slope_uniform'] = _safe_float(parts[0], 1.0)
+                dims['slope_north'] = dims['slope_south'] = dims['slope_east'] = dims['slope_west'] = None
+        elif df_type == 'rectangular':
+            dims['length_internal'] = length
+            dims['width_internal']  = width
+            dims['wall_thickness']  = wall_t
+        else:  # circular
+            dims['diameter_internal'] = length
+            dims['wall_thickness']    = wall_t
+
+        s = {'id': sid, 'name': name, 'type': internal_type, 'dimensions': dims}
+        if x_pos is not None:
+            s['x_pos'] = _safe_float(x_pos)
+        s['y_pos'] = y_pos
+        structures.append(s)
+
+    return structures
+
+
+def write_results_sheet(file_bytes: bytes, results: list) -> bytes:
+    """Write computed results into Basin Results sheet; return updated workbook bytes."""
+    import io
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+    except ImportError:
+        raise ImportError("openpyxl required: pip install openpyxl")
+
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes))
+
+    if RESULTS_SHEET in wb.sheetnames:
+        del wb[RESULTS_SHEET]
+    ws = wb.create_sheet(RESULTS_SHEET)
+
+    # Header row
+    ws.append(RESULTS_HEADERS)
+    header_fill = PatternFill('solid', fgColor='1A2E55')
+    header_font = Font(bold=True, color='DEEEFF')
+    for cell in ws[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal='center')
+
+    # Data rows
+    for r in results:
+        g  = r['geometry']
+        c  = r['coordinates']
+        vc = g.get('v_concrete')
+        ws.append([
+            r['id'], r['name'], r['type'],
+            round(g['v_water'], 3),
+            round(g['v_total_excavation'], 3),
+            round(vc, 3) if vc is not None else None,
+            round(g['outer_footprint_x'], 3),
+            round(g['outer_footprint_y'], 3),
+            round(c['x_start'], 3),
+            round(c['x_end'],   3),
+            round(c['y_start'], 3),
+            round(c['y_end'],   3),
+        ])
+
+    # TOTAL row
+    n = len(results)
+    ds, de = 2, 2 + n - 1
+    total_font = Font(bold=True)
+    total_row = ws.append([
+        'TOTAL', '', '',
+        f'=SUM(D{ds}:D{de})', f'=SUM(E{ds}:E{de})', f'=SUM(F{ds}:F{de})',
+        None, None, None, None, None, None,
+    ])
+    for cell in ws[ws.max_row]:
+        cell.font = total_font
+
+    # Column widths
+    for col, width in zip('ABCDEFGHIJKL', [10, 28, 14, 14, 14, 14, 14, 14, 12, 12, 12, 12]):
+        ws.column_dimensions[col].width = width
+
+    out = io.BytesIO()
+    wb.save(out)
+    return out.getvalue()
+
+
+def create_process_template(output_path: str) -> str:
+    """Create a fresh process_template.xlsx with a Basins input sheet."""
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+    except ImportError:
+        raise ImportError("openpyxl required: pip install openpyxl")
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = BASINS_SHEET
+
+    ws.append(BASINS_HEADERS)
+    header_fill = PatternFill('solid', fgColor='1A2E55')
+    header_font = Font(bold=True, color='DEEEFF')
+    for cell in ws[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal='center')
+
+    # Example rows
+    examples = [
+        ['B01', 'Aeration Tank',  'rectangular', 25.0, 12.0, 5.0, 3.8, 0.4, '',    0.0, 0.0],
+        ['B02', 'Digester',       'circular',    15.0, '',   6.0, 5.0, 0.4, '',    0.0, 0.0],
+        ['B03', 'Settling Basin', 'frustum',     20.0, 10.0, 5.0, 4.0, 0.0, '1.0', 0.0, 0.0],
+    ]
+    for row in examples:
+        ws.append(row)
+
+    for col, width in zip('ABCDEFGHIJK', [10, 24, 16, 20, 12, 10, 14, 14, 16, 10, 10]):
+        ws.column_dimensions[col].width = width
+
+    # Placeholder for Basin Results sheet
+    wb.create_sheet(RESULTS_SHEET)
+
+    wb.save(output_path)
+    return output_path
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. CAD Engine (DXF)
 # ─────────────────────────────────────────────────────────────────────────────
 
 _DXF_LAYERS = {
