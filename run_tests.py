@@ -58,6 +58,9 @@ EXPECTED = {
         'a_loss': (4 - math.pi) * 0.25,
         'v_water': 1148.685,
         'v_total_excavation': 1664.1,
+        # Concrete = (L_outer*W_outer - L_int*W_int + A_loss) * h
+        # = (25.8*12.9 - 25.0*12.1 + (4-pi)*0.25) * 5.0
+        'v_concrete': (25.8 * 12.9 - 25.0 * 12.1 + (4 - math.pi) * 0.25) * 5.0,
         'x_start': 72.0, 'x_end': 97.8,
         'y_start': 0.0,  'y_end': 12.9,
     },
@@ -65,6 +68,9 @@ EXPECTED = {
         'd_outer': 15.8,
         'v_water': math.pi * 7.5**2 * 5.0,
         'v_total_excavation': math.pi * 7.9**2 * 6.0,
+        # Concrete = pi * ((D_outer/2)^2 - (D_int/2)^2) * h
+        # = pi * (7.9^2 - 7.5^2) * 6.0
+        'v_concrete': math.pi * (7.9**2 - 7.5**2) * 6.0,
         'x_start': 103.8, 'x_end': 119.6,
         'y_start': 0.0,   'y_end': 15.8,
     },
@@ -125,6 +131,7 @@ add('B02', 'l_outer (m)              ', g['l_outer'],             EXPECTED['B02'
 add('B02', 'w_outer (m)              ', g['w_outer'],             EXPECTED['B02']['w_outer'])
 add('B02', 'V_water (m³)             ', g['v_water'],             EXPECTED['B02']['v_water'])
 add('B02', 'V_total_excav (m³)       ', g['v_total_excavation'],  EXPECTED['B02']['v_total_excavation'])
+add('B02', 'V_concrete (m³)          ', g['v_concrete'],          EXPECTED['B02']['v_concrete'])
 add('B02', 'X_start (m)              ', c['x_start'],             EXPECTED['B02']['x_start'])
 add('B02', 'X_end (m)                ', c['x_end'],               EXPECTED['B02']['x_end'])
 add('B02', 'Y_end (m)                ', c['y_end'],               EXPECTED['B02']['y_end'])
@@ -135,6 +142,7 @@ c = by_id['B03']['coordinates']
 add('B03', 'd_outer (m)              ', g['d_outer'],             EXPECTED['B03']['d_outer'])
 add('B03', 'V_water (m³)             ', g['v_water'],             EXPECTED['B03']['v_water'])
 add('B03', 'V_total_excav (m³)       ', g['v_total_excavation'],  EXPECTED['B03']['v_total_excavation'])
+add('B03', 'V_concrete (m³)          ', g['v_concrete'],          EXPECTED['B03']['v_concrete'])
 add('B03', 'X_start (m)              ', c['x_start'],             EXPECTED['B03']['x_start'])
 add('B03', 'X_end (m)                ', c['x_end'],               EXPECTED['B03']['x_end'])
 add('B03', 'Y_end (m)                ', c['y_end'],               EXPECTED['B03']['y_end'])

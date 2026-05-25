@@ -32,10 +32,10 @@ def cmd_process(json_path: str):
     W_FP   = 20
     W_VOL  = 14
 
-    divider = '-' * (W_ID + W_NAME + W_TYPE + W_FP + W_VOL * 2 + 8)
+    divider = '-' * (W_ID + W_NAME + W_TYPE + W_FP + W_VOL * 3 + 10)
     header  = (f"{'ID':<{W_ID}} {'Name':<{W_NAME}} {'Type':<{W_TYPE}} "
                f"{'Footprint':<{W_FP}} {'V_water (m3)':>{W_VOL}} "
-               f"{'V_excav (m3)':>{W_VOL}}")
+               f"{'V_excav (m3)':>{W_VOL}} {'V_concrete (m3)':>{W_VOL}}")
 
     print()
     print('=' * len(header))
@@ -46,10 +46,10 @@ def cmd_process(json_path: str):
 
     total_vw = 0.0
     total_ve = 0.0
+    total_vc = 0.0
 
     for r in results:
-        g    = r['geometry']
-        c    = r['coordinates']
+        g     = r['geometry']
         stype = r['type']
 
         if stype == 'circular':
@@ -59,15 +59,22 @@ def cmd_process(json_path: str):
 
         vw = g['v_water']
         ve = g['v_total_excavation']
+        vc = g.get('v_concrete')
         total_vw += vw
         total_ve += ve
 
+        if vc is not None:
+            total_vc += vc
+            vc_str = f"{vc:>{W_VOL}.3f}"
+        else:
+            vc_str = f"{'n/a':>{W_VOL}}"
+
         print(f"{r['id']:<{W_ID}} {r['name']:<{W_NAME}} {stype:<{W_TYPE}} "
-              f"{fp:<{W_FP}} {vw:>{W_VOL}.3f} {ve:>{W_VOL}.3f}")
+              f"{fp:<{W_FP}} {vw:>{W_VOL}.3f} {ve:>{W_VOL}.3f} {vc_str}")
 
     print(divider)
     print(f"{'TOTAL':<{W_ID}} {'':<{W_NAME}} {'':<{W_TYPE}} {'':<{W_FP}} "
-          f"{total_vw:>{W_VOL}.3f} {total_ve:>{W_VOL}.3f}")
+          f"{total_vw:>{W_VOL}.3f} {total_ve:>{W_VOL}.3f} {total_vc:>{W_VOL}.3f}")
     print('=' * len(header))
 
     # Coordinate layout

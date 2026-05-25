@@ -129,11 +129,13 @@ def make_2d_blueprint(results: list) -> go.Figure:
                 showlegend=False, hoverinfo='skip',
             ))
 
-        # ID + V_water label
+        # ID + volumes label
+        vc = g.get('v_concrete')
+        vc_line = f"<br>V_c={vc:.1f} m3" if vc is not None else ''
         traces.append(go.Scatter(
             x=[cx], y=[cy],
             mode='text',
-            text=[f"<b>{r['id']}</b><br>{g['v_water']:.1f} m³"],
+            text=[f"<b>{r['id']}</b><br>V_w={g['v_water']:.1f} m3{vc_line}"],
             textfont=dict(size=10, color='#222222'),
             showlegend=False, hoverinfo='skip',
         ))
@@ -284,6 +286,16 @@ def make_3d_box(result: dict) -> go.Figure:
         annotations.append(dict(
             x=0, y=0, z=h * 1.05,
             text=f'Fillet Radius: {R:.2f} m',
+            showarrow=False,
+            font=dict(size=12, color='#555555'),
+        ))
+
+    # Concrete volume annotation
+    vc = g.get('v_concrete')
+    if vc is not None:
+        annotations.append(dict(
+            x=0, y=0, z=h * 1.15,
+            text=f'V_concrete: {vc:.2f} m3',
             showarrow=False,
             font=dict(size=12, color='#555555'),
         ))

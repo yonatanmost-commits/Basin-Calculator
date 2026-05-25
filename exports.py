@@ -50,10 +50,22 @@ def _footprint_string(r: dict) -> str:
 def export_excel(results: list, template_path: str, output_path: str = None) -> str:
     """
     Load existing Excel template, inject a summary table, save.
-    Returns the path written to.
+
+    Column layout (units carried in header parentheses):
+      A  ID
+      B  Name
+      C  Type
+      D  Raw Input Dimensions  (original string, reference only)
+      E  Length / Diameter (m)   numeric
+      F  Width (m)               numeric  (= E for circular)
+      G  Footprint Area (m2)     Excel formula  =E*F or =PI()*(E/2)^2
+      H  Water Volume (m3)       numeric
+      I  Excavation Volume (m3)  numeric
+      J  Concrete Volume (m3)    numeric  (blank for frustum / earth basins)
     """
     try:
         import openpyxl
+        from openpyxl.utils import get_column_letter
     except ImportError:
         raise ImportError("openpyxl required: pip install openpyxl")
 
@@ -63,8 +75,7 @@ def export_excel(results: list, template_path: str, output_path: str = None) -> 
     wb = openpyxl.load_workbook(template_path)
     ws = wb.active
 
-    # Detect header row: first row whose first cell matches our ID column header.
-    # Everything below it is data we own — clear it before each write.
+    # Detect header row by 'ID' sentinel; clear everything below it each run.
     HEADER_MARKER = 'ID'
     header_row = None
     for i, row in enumerate(ws.iter_rows(min_col=1, max_col=1, values_only=True), start=1):
@@ -73,42 +84,55 @@ def export_excel(results: list, template_path: str, output_path: str = None) -> 
             break
 
     if header_row is None:
-        # Template has no header row yet — write one after the last non-empty row
-        last_used = ws.max_row
-        header_row = last_used + 1
-        headers = [
-            'ID', 'Name', 'Type',
-            'Raw Dimensions',
-            'Footprint (m or m²)',
-            'Water Volume (m³)',
-            'Total Excavation Volume (m³)',
-        ]
-        ws.append(headers)
+        header_row = ws.max_row + 1
+        ws.append([
+            'ID', 'Name', 'Type', 'Raw Input Dimensions',
+            'Length / Diameter (m)', 'Width (m)',
+            'Footprint Area (m2)',
+            'Water Volume (m3)',
+            'Excavation Volume (m3)',
+            'Concrete Volume (m3)',
+        ])
 
-    # Delete all rows below the header row so each run is idempotent
     data_start = header_row + 1
     if ws.max_row >= data_start:
         ws.delete_rows(data_start, ws.max_row - header_row)
 
-    for r in results:
-        g = r['geometry']
+    for row_i, r in enumerate(results, start=data_start):
+        g     = r['geometry']
+        stype = r['type']
+
+        if stype == 'circular':
+            dim1 = round(g['d_outer'], 3)
+            dim2 = round(g['d_outer'], 3)
+            # Area formula: PI()*(D/2)^2  where D is in column E
+            area_formula = f'=PI()*(E{row_i}/2)^2'
+        else:
+            dim1 = round(g['outer_footprint_x'], 3)
+            dim2 = round(g['outer_footprint_y'], 3)
+            area_formula = f'=E{row_i}*F{row_i}'
+
+        v_concrete = g.get('v_concrete')
         ws.append([
             r['id'],
             r['name'],
             r['type'],
             _raw_dim_string(r['dimensions'], r['type']),
-            _footprint_string(r),
+            dim1,
+            dim2,
+            area_formula,
             round(g['v_water'], 3),
             round(g['v_total_excavation'], 3),
+            round(v_concrete, 3) if v_concrete is not None else None,
         ])
 
     data_end = data_start + len(results) - 1
-    vw_col  = 'F'   # Water Volume
-    ve_col  = 'G'   # Excavation Volume
     ws.append([
-        'TOTAL', '', '', '', '',
-        f'=SUM({vw_col}{data_start}:{vw_col}{data_end})',
-        f'=SUM({ve_col}{data_start}:{ve_col}{data_end})',
+        'TOTAL', '', '', '', '', '',
+        f'=SUM(G{data_start}:G{data_end})',
+        f'=SUM(H{data_start}:H{data_end})',
+        f'=SUM(I{data_start}:I{data_end})',
+        f'=SUM(J{data_start}:J{data_end})',
     ])
 
     dest = output_path or template_path

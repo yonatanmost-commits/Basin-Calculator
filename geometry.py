@@ -111,6 +111,9 @@ def _compute_rectangular(dims: dict) -> dict:
     w_outer = w_int + 2.0 * tw
     v_total = l_outer * w_outer * h
 
+    # Concrete = outer box minus inner void; fillet corners are solid concrete
+    v_concrete = (l_outer * w_outer - l_int * w_int + a_loss) * h
+
     return {
         'l_internal': l_int, 'w_internal': w_int,
         'l_outer': l_outer,  'w_outer': w_outer,
@@ -121,6 +124,7 @@ def _compute_rectangular(dims: dict) -> dict:
         'water_depth': d,
         'v_water': v_water,
         'v_total_excavation': v_total,
+        'v_concrete': v_concrete,
     }
 
 
@@ -135,6 +139,9 @@ def _compute_circular(dims: dict) -> dict:
     d_outer = d_int + 2.0 * tw
     v_total = math.pi * (d_outer / 2.0) ** 2 * h
 
+    # Concrete = annular ring cross-section × height
+    v_concrete = math.pi * ((d_outer / 2.0) ** 2 - (d_int / 2.0) ** 2) * h
+
     return {
         'd_internal': d_int,
         'd_outer': d_outer,
@@ -144,6 +151,7 @@ def _compute_circular(dims: dict) -> dict:
         'water_depth': d,
         'v_water': v_water,
         'v_total_excavation': v_total,
+        'v_concrete': v_concrete,
     }
 
 
