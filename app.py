@@ -242,15 +242,15 @@ with st.sidebar:
     uploaded = st.file_uploader("Upload process Excel", type=["xlsx"], key="proc_upload")
     if uploaded is not None:
         if st.session_state.get("_proc_upload_name") != uploaded.name:
+            file_bytes = uploaded.read()
             try:
-                file_bytes = uploaded.read()
                 new_structs = read_basins_sheet(file_bytes)
-                st.session_state.structures         = new_structs
-                st.session_state._proc_upload_name  = uploaded.name
-                st.session_state._proc_upload_bytes = file_bytes
-                st.rerun()
-            except Exception as exc:
-                st.error(f"Could not read Basins sheet: {exc}")
+            except ValueError:
+                new_structs = []   # no Basins sheet — start empty, export still works
+            st.session_state.structures         = new_structs
+            st.session_state._proc_upload_name  = uploaded.name
+            st.session_state._proc_upload_bytes = file_bytes
+            st.rerun()
 
     if st.session_state.get("_proc_upload_bytes") and st.session_state.get("_proc_upload_name"):
         st.caption(f"Loaded: {st.session_state._proc_upload_name}")
