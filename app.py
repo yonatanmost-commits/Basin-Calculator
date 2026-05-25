@@ -113,18 +113,19 @@ def _to_df(structures: list) -> pd.DataFrame:
             wall   = _f(d.get("wall_thickness"))
 
         rows.append({
-            "Del":             False,
-            "ID":              s["id"],
-            "Name":            s["name"],
-            "Type":            df_type,
-            "Length / Diam (int.)":   length,
-            "Width":           width,
-            "Height (m)":      _f(d.get("total_height")),
-            "Water Depth (m)": _f(d.get("water_depth")),
-            "Wall Thick (m)":  wall,
-            "Slope":           slope_str,
-            "X (m)":           _f(s.get("x_pos"), 0.0),
-            "Y (m)":           _f(s.get("y_pos"), 0.0),
+            "Del":              False,
+            "ID":               s["id"],
+            "Name":             s["name"],
+            "Type":             df_type,
+            "Length / Diam (int.)": length,
+            "Width":            width,
+            "Height (m)":       _f(d.get("total_height")),
+            "Water Depth (m)":  _f(d.get("water_depth")),
+            "Underdrain (m)":   _f(d.get("underdrain_height"), 0.0),
+            "Wall Thick (m)":   wall,
+            "Slope":            slope_str,
+            "X (m)":            _f(s.get("x_pos"), 0.0),
+            "Y (m)":            _f(s.get("y_pos"), 0.0),
         })
     return pd.DataFrame(rows)
 
@@ -160,10 +161,11 @@ def _from_df(df: pd.DataFrame, base_structures: list) -> list:
         w = _f(row["Water Depth (m)"], 0.5)
 
         if df_type in ("frustum", "uneven frustum"):
-            d["length_bottom"] = str(row["Length / Diam (int.)"])
-            d["width_bottom"]  = str(row["Width"])
-            d["total_height"]  = h
-            d["water_depth"]   = w
+            d["length_bottom"]    = str(row["Length / Diam (int.)"])
+            d["width_bottom"]     = str(row["Width"])
+            d["total_height"]     = h
+            d["water_depth"]      = w
+            d["underdrain_height"] = _f(row.get("Underdrain (m)"), 0.0)
             uniform, nsew = _parse_slope_str(row["Slope"])
             if df_type == "uneven frustum" and nsew:
                 d["uneven_slopes_enabled"] = True
@@ -178,17 +180,19 @@ def _from_df(df: pd.DataFrame, base_structures: list) -> list:
                 d["slope_north"] = d["slope_south"] = d["slope_east"] = d["slope_west"] = None
 
         elif df_type == "rectangular":
-            d["length_internal"] = str(row["Length / Diam (int.)"])
-            d["width_internal"]  = str(row["Width"])
-            d["total_height"]    = h
-            d["water_depth"]     = w
-            d["wall_thickness"]  = _f(row["Wall Thick (m)"])
+            d["length_internal"]  = str(row["Length / Diam (int.)"])
+            d["width_internal"]   = str(row["Width"])
+            d["total_height"]     = h
+            d["water_depth"]      = w
+            d["underdrain_height"] = _f(row.get("Underdrain (m)"), 0.0)
+            d["wall_thickness"]   = _f(row["Wall Thick (m)"])
 
         else:  # circular
-            d["diameter_internal"] = str(row["Length / Diam (int.)"])
-            d["total_height"]      = h
-            d["water_depth"]       = w
-            d["wall_thickness"]    = _f(row["Wall Thick (m)"])
+            d["diameter_internal"]  = str(row["Length / Diam (int.)"])
+            d["total_height"]       = h
+            d["water_depth"]        = w
+            d["underdrain_height"]  = _f(row.get("Underdrain (m)"), 0.0)
+            d["wall_thickness"]     = _f(row["Wall Thick (m)"])
 
         base["x_pos"] = _f(row.get("X (m)"), 0.0)
         base["y_pos"] = _f(row.get("Y (m)"), 0.0)
@@ -204,7 +208,7 @@ _DEFAULT_STRUCTURE = {
         "slope_uniform": 1.0, "uneven_slopes_enabled": False,
         "slope_north": None, "slope_south": None,
         "slope_east": None, "slope_west": None,
-        "wall_thickness": 0.0,
+        "underdrain_height": 0.0, "wall_thickness": 0.0,
     },
 }
 
@@ -307,6 +311,7 @@ edited_df = st.data_editor(
         ),
         "Height (m)":       st.column_config.NumberColumn(min_value=0.01, step=0.1,  format="%.2f"),
         "Water Depth (m)":  st.column_config.NumberColumn(min_value=0.01, step=0.1,  format="%.2f"),
+        "Underdrain (m)":   st.column_config.NumberColumn(min_value=0.0,  step=0.05, format="%.2f"),
         "Wall Thick (m)":   st.column_config.NumberColumn(min_value=0.0,  step=0.05, format="%.3f"),
         "Slope": st.column_config.TextColumn(
             label="Slope  (N;S;E;W for uneven)",
@@ -370,6 +375,7 @@ if ok:
     # ── Metrics ───────────────────────────────────────────────────────────
     total_fp = sum(r["geometry"]["outer_footprint_x"] * r["geometry"]["outer_footprint_y"] for r in results)
     total_vw = sum(r["geometry"]["v_water"]            for r in results)
+    total_vp = sum(r["geometry"]["v_process"]          for r in results)
     total_ve = sum(r["geometry"]["v_total_excavation"] for r in results)
     total_vc = sum(r["geometry"].get("v_concrete") or 0.0 for r in results)
 
@@ -384,11 +390,12 @@ if ok:
             f'</div>'
         )
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
     c1.markdown(_metric_card("Total Footprint Area",    f"{total_fp:,.1f} m²"), unsafe_allow_html=True)
-    c2.markdown(_metric_card("Total Process Capacity",  f"{total_vw:,.1f} m³"), unsafe_allow_html=True)
-    c3.markdown(_metric_card("Total Excavation Volume", f"{total_ve:,.1f} m³"), unsafe_allow_html=True)
-    c4.markdown(_metric_card("Total Concrete Volume",   f"{total_vc:,.1f} m³"), unsafe_allow_html=True)
+    c2.markdown(_metric_card("Total Water Volume",      f"{total_vw:,.1f} m³"), unsafe_allow_html=True)
+    c3.markdown(_metric_card("Total Process Volume",    f"{total_vp:,.1f} m³"), unsafe_allow_html=True)
+    c4.markdown(_metric_card("Total Excavation Volume", f"{total_ve:,.1f} m³"), unsafe_allow_html=True)
+    c5.markdown(_metric_card("Total Concrete Volume",   f"{total_vc:,.1f} m³"), unsafe_allow_html=True)
 
     # ── Charts ────────────────────────────────────────────────────────────
     left, right = st.columns(2)

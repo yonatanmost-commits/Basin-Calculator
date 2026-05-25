@@ -50,6 +50,7 @@ def _compute_frustum(dims: dict) -> dict:
     w_bot = parse_dim(dims['width_bottom'])
     h     = parse_dim(dims['total_height'])
     d     = parse_dim(dims['water_depth'])
+    ud    = min(parse_dim(dims.get('underdrain_height') or 0.0), d)
 
     s_n, s_s, s_e, s_w = _resolve_slopes(dims)
 
@@ -71,6 +72,14 @@ def _compute_frustum(dims: dict) -> dict:
     a_water = l_water * w_water
     v_water = _prismatoid_volume(a_bot, a_water, d)
 
+    # Underdrain: small frustum from z=0 to z=ud, same slopes
+    if ud > 0:
+        l_ud = l_bot + ud * s_w + ud * s_e
+        w_ud = w_bot + ud * s_s + ud * s_n
+        v_underdrain = _prismatoid_volume(a_bot, l_ud * w_ud, ud)
+    else:
+        v_underdrain = 0.0
+
     return {
         'l_bottom': l_bot, 'w_bottom': w_bot,
         'l_top': l_top,   'w_top': w_top,
@@ -79,7 +88,10 @@ def _compute_frustum(dims: dict) -> dict:
         'slopes': {'N': s_n, 'S': s_s, 'E': s_e, 'W': s_w},
         'total_height': h,
         'water_depth': d,
+        'underdrain_height': ud,
         'v_water': v_water,
+        'v_underdrain': v_underdrain,
+        'v_process': v_water - v_underdrain,
         'v_total_excavation': v_total,
     }
 
@@ -90,8 +102,10 @@ def _compute_rectangular(dims: dict) -> dict:
     h     = parse_dim(dims['total_height'])
     d     = parse_dim(dims['water_depth'])
     tw    = parse_dim(dims.get('wall_thickness') or 0.0)
+    ud    = min(parse_dim(dims.get('underdrain_height') or 0.0), d)
 
-    v_water = l_int * w_int * d
+    v_water      = l_int * w_int * d
+    v_underdrain = l_int * w_int * ud
 
     l_outer = l_int + 2.0 * tw
     w_outer = w_int + 2.0 * tw
@@ -106,7 +120,10 @@ def _compute_rectangular(dims: dict) -> dict:
         'outer_footprint_y': w_outer,
         'total_height': h,
         'water_depth': d,
+        'underdrain_height': ud,
         'v_water': v_water,
+        'v_underdrain': v_underdrain,
+        'v_process': v_water - v_underdrain,
         'v_total_excavation': v_total,
         'v_concrete': v_concrete,
     }
@@ -117,14 +134,17 @@ def _compute_circular(dims: dict) -> dict:
     h     = parse_dim(dims['total_height'])
     d     = parse_dim(dims['water_depth'])
     tw    = parse_dim(dims.get('wall_thickness') or 0.0)
+    ud    = min(parse_dim(dims.get('underdrain_height') or 0.0), d)
 
-    v_water = math.pi * (d_int / 2.0) ** 2 * d
+    r_int        = d_int / 2.0
+    v_water      = math.pi * r_int ** 2 * d
+    v_underdrain = math.pi * r_int ** 2 * ud
 
     d_outer = d_int + 2.0 * tw
     v_total = math.pi * (d_outer / 2.0) ** 2 * h
 
     # Concrete = annular ring cross-section × height
-    v_concrete = math.pi * ((d_outer / 2.0) ** 2 - (d_int / 2.0) ** 2) * h
+    v_concrete = math.pi * ((d_outer / 2.0) ** 2 - r_int ** 2) * h
 
     return {
         'd_internal': d_int,
@@ -133,7 +153,10 @@ def _compute_circular(dims: dict) -> dict:
         'outer_footprint_y': d_outer,
         'total_height': h,
         'water_depth': d,
+        'underdrain_height': ud,
         'v_water': v_water,
+        'v_underdrain': v_underdrain,
+        'v_process': v_water - v_underdrain,
         'v_total_excavation': v_total,
         'v_concrete': v_concrete,
     }

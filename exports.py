@@ -149,12 +149,13 @@ RESULTS_SHEET = 'Basin Results'
 
 BASINS_HEADERS = [
     'ID', 'Name', 'Type', 'Length / Diam (int.)', 'Width (int.)',
-    'Height (m)', 'Water Depth (m)', 'Wall Thick (m)', 'Slope', 'X (m)', 'Y (m)',
+    'Height (m)', 'Water Depth (m)', 'Underdrain (m)', 'Wall Thick (m)', 'Slope', 'X (m)', 'Y (m)',
 ]
 
 RESULTS_HEADERS = [
     'ID', 'Name', 'Type',
-    'V_water (m3)', 'V_excav (m3)', 'V_concrete (m3)',
+    'V_water (m3)', 'V_underdrain (m3)', 'V_process (m3)',
+    'V_excav (m3)', 'V_concrete (m3)',
     'Footprint X (m)', 'Footprint Y (m)',
     'X start (m)', 'X end (m)', 'Y start (m)', 'Y end (m)',
 ]
@@ -201,18 +202,20 @@ def read_basins_sheet(file_bytes: bytes) -> list:
         width   = str(row[4]) if row[4] is not None else ''
         height  = _safe_float(row[5], 1.0)
         depth   = _safe_float(row[6], 0.5)
-        wall_t  = _safe_float(row[7], 0.0)
-        slope   = str(row[8]) if row[8] is not None else '1.0'
-        x_pos   = row[9]
-        y_pos   = _safe_float(row[10], 0.0)
+        ud      = _safe_float(row[7], 0.0)
+        wall_t  = _safe_float(row[8], 0.0)
+        slope   = str(row[9]) if row[9] is not None else '1.0'
+        x_pos   = row[10]
+        y_pos   = _safe_float(row[11], 0.0)
 
         internal_type = 'frustum' if df_type in ('frustum', 'uneven frustum') else df_type
         dims = {'total_height': height, 'water_depth': depth}
 
         if df_type in ('frustum', 'uneven frustum'):
-            dims['length_bottom'] = length
-            dims['width_bottom']  = width
-            dims['wall_thickness'] = 0.0
+            dims['length_bottom']    = length
+            dims['width_bottom']     = width
+            dims['underdrain_height'] = ud
+            dims['wall_thickness']   = 0.0
             parts = [p.strip() for p in slope.split(';')]
             if len(parts) == 4:
                 dims['uneven_slopes_enabled'] = True
@@ -226,11 +229,13 @@ def read_basins_sheet(file_bytes: bytes) -> list:
                 dims['slope_uniform'] = _safe_float(parts[0], 1.0)
                 dims['slope_north'] = dims['slope_south'] = dims['slope_east'] = dims['slope_west'] = None
         elif df_type == 'rectangular':
-            dims['length_internal'] = length
-            dims['width_internal']  = width
-            dims['wall_thickness']  = wall_t
+            dims['length_internal']   = length
+            dims['width_internal']    = width
+            dims['underdrain_height'] = ud
+            dims['wall_thickness']    = wall_t
         else:  # circular
             dims['diameter_internal'] = length
+            dims['underdrain_height'] = ud
             dims['wall_thickness']    = wall_t
 
         s = {'id': sid, 'name': name, 'type': internal_type, 'dimensions': dims}
@@ -273,7 +278,9 @@ def write_results_sheet(file_bytes: bytes, results: list) -> bytes:
         vc = g.get('v_concrete')
         ws.append([
             r['id'], r['name'], r['type'],
-            round(g['v_water'], 3),
+            round(g['v_water'],      3),
+            round(g['v_underdrain'], 3),
+            round(g['v_process'],    3),
             round(g['v_total_excavation'], 3),
             round(vc, 3) if vc is not None else None,
             round(g['outer_footprint_x'], 3),
@@ -291,6 +298,7 @@ def write_results_sheet(file_bytes: bytes, results: list) -> bytes:
     total_row = ws.append([
         'TOTAL', '', '',
         f'=SUM(D{ds}:D{de})', f'=SUM(E{ds}:E{de})', f'=SUM(F{ds}:F{de})',
+        f'=SUM(G{ds}:G{de})', f'=SUM(H{ds}:H{de})',
         None, None, None, None, None, None,
     ])
     for cell in ws[ws.max_row]:
@@ -325,16 +333,16 @@ def create_process_template(output_path: str) -> str:
         cell.font = header_font
         cell.alignment = Alignment(horizontal='center')
 
-    # Example rows
+    # Example rows: ID, Name, Type, Length, Width, Height, WaterDepth, Underdrain, WallThick, Slope, X, Y
     examples = [
-        ['B01', 'Aeration Tank',  'rectangular', 25.0, 12.0, 5.0, 3.8, 0.4, '',    0.0, 0.0],
-        ['B02', 'Digester',       'circular',    15.0, '',   6.0, 5.0, 0.4, '',    0.0, 0.0],
-        ['B03', 'Settling Basin', 'frustum',     20.0, 10.0, 5.0, 4.0, 0.0, '1.0', 0.0, 0.0],
+        ['B01', 'Aeration Tank',  'rectangular', 25.0, 12.0, 5.0, 3.8, 0.3, 0.4, '',    0.0, 0.0],
+        ['B02', 'Digester',       'circular',    15.0, '',   6.0, 5.0, 0.0, 0.4, '',    0.0, 0.0],
+        ['B03', 'Settling Basin', 'frustum',     20.0, 10.0, 5.0, 4.0, 0.0, 0.0, '1.0', 0.0, 0.0],
     ]
     for row in examples:
         ws.append(row)
 
-    for col, width in zip('ABCDEFGHIJK', [10, 24, 16, 20, 12, 10, 14, 14, 16, 10, 10]):
+    for col, width in zip('ABCDEFGHIJKL', [10, 24, 16, 20, 12, 10, 14, 13, 13, 16, 10, 10]):
         ws.column_dimensions[col].width = width
 
     # Placeholder for Basin Results sheet
