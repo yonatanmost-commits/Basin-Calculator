@@ -1,0 +1,87 @@
+# Specification: Data Contract & State Management
+
+## Core Philosophy
+* Data interaction is handled strictly via a flat, spreadsheet-like JSON structure. 
+* This schema is the single source of truth connecting any external frontend to the backend engine.
+* Dimension inputs can accept strings with comma-separated values to support automatic averaging of field measurements.
+* Supports a checkbox toggle (`uneven_slopes_enabled`) to switch between uniform and directional side slope inputs.
+
+## File Target: `state.json`
+Save the following configuration as your base state file. 
+
+```json
+{
+  "global_settings": {
+    "corridor_width_m": 6.0,
+    "excel_template_path": "C:/templates/basin_calc.xlsx"
+  },
+  "structures": [
+    {
+      "id": "B01",
+      "name": "Standard Frustum (Uniform Slope)",
+      "type": "frustum",
+      "dimensions": {
+        "length_bottom": "20.0, 19.8, 20.2",
+        "width_bottom": 10.0,
+        "length_top": null,
+        "width_top": null,
+        "uneven_slopes_enabled": false,
+        "slope_uniform": 1.0,
+        "slope_north": null,
+        "slope_south": null,
+        "slope_east": null,
+        "slope_west": null,
+        "total_height": 5.0,
+        "water_depth": 4.2,
+        "wall_thickness": 0.0,
+        "corner_fillet_radius_m": 0.0
+      }
+    },
+    {
+      "id": "B01-Alt",
+      "name": "Special Frustum (Uneven Slopes Enabled)",
+      "type": "frustum",
+      "dimensions": {
+        "length_bottom": 20.0,
+        "width_bottom": 10.0,
+        "length_top": null,
+        "width_top": null,
+        "uneven_slopes_enabled": true,
+        "slope_uniform": null,
+        "slope_north": 0.0,
+        "slope_south": 1.5,
+        "slope_east": 1.0,
+        "slope_west": 1.0,
+        "total_height": 5.0,
+        "water_depth": 4.2,
+        "wall_thickness": 0.0,
+        "corner_fillet_radius_m": 0.0
+      }
+    },
+    {
+      "id": "B02",
+      "name": "Aeration Tank 1",
+      "type": "rectangular",
+      "dimensions": {
+        "length_internal": 25.0,
+        "width_internal": "12.0, 12.2",
+        "total_height": 5.0,
+        "water_depth": 3.8,
+        "wall_thickness": 0.4,
+        "corner_fillet_radius_m": 0.5
+      }
+    },
+    {
+      "id": "B03",
+      "name": "Digester A",
+      "type": "circular",
+      "dimensions": {
+        "diameter_internal": 15.0,
+        "total_height": 6.0,
+        "water_depth": 5.0,
+        "wall_thickness": 0.4,
+        "corner_fillet_radius_m": 0.0
+      }
+    }
+  ]
+}

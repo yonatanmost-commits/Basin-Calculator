@@ -1,0 +1,67 @@
+---
+
+###---
+
+### Final File 2: `02_GEOMETRY.md`
+```markdown
+# Specification: Geometry & Math Engine
+
+## File Target: `geometry.py`
+This module contains pure Python computation functions with zero UI or graphical dependencies. It parses inputs from `state.json` and outputs precise metrics.
+
+## 1. Input Pre-Processing & Auto-Averaging
+* Before executing any geometric calculation, check the data type of the dimension fields.
+* If a field contains a string with commas (e.g., `"20.0, 19.8, 20.2"`), split the string by the comma delimiter, strip whitespace, convert the values to floats, and compute their arithmetic mean.
+* Use this calculated average as the true dimension value for all subsequent math steps.
+
+## 2. Sloped Frustum Dimension & Slope Resolver
+For `frustum` types, the engine must evaluate the parameters and the `uneven_slopes_enabled` flag to resolve the outer top boundaries ($L_{top}$ and $W_{top}$) before running calculations:
+
+* **Conditional Slope Logic:**
+  * If `uneven_slopes_enabled` is `false`, the engine reads `slope_uniform` and applies it across all 4 sides:
+    $$S_N, S_S, S_E, S_W = S_{uniform}$$
+  * If `uneven_slopes_enabled` is `true`, the engine directly reads the independent inputs: `slope_north` ($S_N$), `slope_south` ($S_S$), `slope_east` ($S_E$), and `slope_west` ($S_W$). If any individual directional slope is missing or null, default its value to 0.0 (vertical wall).
+
+* **Top Boundary Resolution Formula:**
+  * Project outward from the bottom edge limits using the independent side slopes and total height ($h$):
+    $$\Delta L_{west} = h \cdot S_W \quad \text{and} \quad \Delta L_{east} = h \cdot S_E \implies L_{top} = L_{bottom} + \Delta L_{west} + \Delta L_{east}$$
+    $$\Delta W_{south} = h \cdot S_S \quad \text{and} \quad \Delta W_{north} = h \cdot S_N \implies W_{top} = W_{bottom} + \Delta W_{south} + \Delta W_{north}$$
+  * *Override:* If explicit values for `length_top` and `width_top` are manually populated in the JSON data, bypass the slope calculations and use those dimensions directly.
+
+## 3. Corner Fillet Volumetric Adjustments
+* If `corner_fillet_radius_m` ($R$) is greater than 0, the horizontal surface area lost to the 4 corner fillets must be subtracted before calculating volumes.
+* Area Loss Formula: 
+  $$A_{loss} = (4 - \pi) \cdot R^2$$
+* For rectangular and frustum tanks, this $A_{loss}$ must be subtracted from the corresponding base area profiles so that final excavation and water volumes are mathematically exact.
+
+## 4. Volume Calculation Rules
+
+* **Type: Frustum (Inverted Basin with Equal or Uneven Slopes)**
+  * *Wall Thickness:* Force to 0.0.
+  * *Total Excavation Volume ($V_{total}$):* Uses total height ($h$), resolved bottom area ($A_{bot} = L_{bottom} \cdot W_{bottom}$), and resolved top area ($A_{top} = L_{top} \cdot W_{top}$). Apply the fillet reduction area to both bases if $R > 0$.
+    $$V_{total} = \frac{1}{3} \cdot h \cdot (A_{bot} + A_{top} + \sqrt{A_{bot} \cdot A_{top}})$$
+  * *Water Volume ($V_{water}$):* Calculate intermediate plane dimensions at `water_depth` ($d$) by interpolating each side independently using its specific directional slope (e.g., $L_{water} = L_{bottom} + (d \cdot S_W) + (d \cdot S_E)$). Calculate the intermediate area, apply the fillet reduction $A_{loss}$, and execute the frustum formula from the bottom base up to depth $d$.
+
+* **Type: Rectangular (Vertical Walls)**
+  * *Internal Process Water Volume:* $(L_{internal} \cdot W_{internal} - A_{loss}) \cdot d$
+  * *Outer Structural Footprint:* $L_{outer} = L_{internal} + 2t_w$ and $W_{outer} = W_{internal} + 2t_w$
+  * *Total Excavation Volume:* $L_{outer} \cdot W_{outer} \cdot h$
+
+* **Type: Circular (Vertical Cylinder)**
+  * *Internal Process Water Volume:* $\pi \cdot (D_{internal} / 2)^2 \cdot d$ (Fillets are not applied to circular types; ignore $R$).
+  * *Outer Structural Footprint:* $D_{outer} = D_{internal} + 2t_w$
+  * *Total Excavation Volume:* $\pi \cdot (D_{outer} / 2)^2 \cdot h$
+
+## 5. Spatial Layout Coordinator
+* **Function:** `compute_layout_coordinates(state_json)`
+* **Logic:** Loops sequentially through the `structures` array. Places the first structure at grid $X=0$. For each subsequent structure, it reads the previous structure's outer edge footprint (using resolved top dimensions for frustums), adds the global `corridor_width_m`, and sets that value as the starting absolute $X$ coordinate for the next structure.
+* **Output:** Modifies the runtime data payload to include absolute spatial boundaries $(X_{start}, X_{end}, Y_{start}, Y_{end})$, computed water volumes, and total excavation volumes.ts outer concrete boundary lines, internal process channel boundaries, and intermediate road corridor gaps. 
+
+## 2. Aspect-Ratio-Locked 3D Box View
+* **Type:** Plotly 3D Mesh/Surface plot generated for an individual selected structure.
+* **Strict Scaling Rule:** Must apply `scene_aspectmode='data'` to the Plotly layout. This guarantees wide, shallow aeration basins or deep, narrow digesters maintain their true real-world physical proportions without flattening or stretching inside the viewing box.
+* **Color Scheme:** Outer concrete walls rendered as semi-transparent concrete grey; liquid level rendered as a solid blue block filling the interior up to the calculated `water_depth`.
+
+## 3. Fillet Visual Annotation Rule
+* To keep the 3D rendering engine fast, simple, and easy to edit, do not deform or round the 3D vertex mesh coordinate array to show the fillet curve.
+* Render the primary crisp rectangular bounding box normally, and append a clear text annotation or legend banner on the Plotly canvas indicating: `Fillet Radius: X.X m`.

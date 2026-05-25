@@ -1,0 +1,25 @@
+# Specification: Export Infrastructure & CLI Harness
+
+## 1. Excel Engine (`exports.py` using `openpyxl`)
+* **Logic:** Loads the existing Excel spreadsheet template path in read/write mode.
+* **Action:** Modifies the file in-place, preserving all original worksheet styles, formatting, or macros.
+* **Data Log:** Injects rows sequentially into the summary sheet. Columns written: ID, Name, Type, User Raw Dimensions (keeps original comma-separated string if present), Calculated Footprints, Water Volume, and Total Excavation Volume.
+* **Formulas:** Injects live, uppercase Excel formula strings (e.g., `=SUM(I3:I5)`) into the final summary row to calculate global **Total Area**, **Total Process Capacity**, and **Total Excavation Volume**.
+
+## 2. CAD Engine (`exports.py` using `ezdxf`)
+* **Action:** Generates a clean 2D vector `.dxf` site plan using absolute coordinates.
+* **Layers:** Groups vectors into clean layers (`SITE_OUTER_BOUNDARIES`, `FLUID_CHANNELS`, `MAINTENANCE_ROADS`) so engineers can open the file cleanly in AutoCAD or Civil 3D.
+
+## 3. PNG Image Capture (`exports.py`)
+* Automatically exports the master 2D site map and the active individual 3D box views as standalone high-resolution `.png` image files using Plotly's static export capabilities.
+
+---
+
+## 4. CLI Runner & Testing Harness (`main.py`)
+Provides a clean, browserless command line interface to execute, test, and audit the backend codebase quickly.
+
+### Terminal Commands to implement:
+* `python main.py --process <path_to_json>` : Reads state, handles averaging/fillets, prints clean summary table to console.
+* `python main.py --export-excel <path_to_json>` : Computes logic and updates the target existing Excel spreadsheet template.
+* `python main.py --export-cad <path_to_json>` : Outputs the 2D DXF blueprint file.
+* `python main.py --generate-charts <path_to_json>` : Generates and saves the layout and 3D PNG images to disk.
