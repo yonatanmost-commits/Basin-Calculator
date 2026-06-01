@@ -74,3 +74,11 @@ def test_basis_error_flags_nonpositive_derived_bottom():
     msg = geometry.frustum_basis_error(dims)
     assert msg is not None
     assert "derived bottom" in msg
+
+
+def test_basis_error_flags_nonpositive_derived_width():
+    # width too small: w_bot = 8 - 5*(1+1) = -2 (length fine: l_bot = 40-10 = 30)
+    dims = _base_frustum(dimension_basis="top", length_top=40.0, width_top=8.0)
+    msg = geometry.frustum_basis_error(dims)
+    assert msg is not None
+    assert "derived bottom" in msg

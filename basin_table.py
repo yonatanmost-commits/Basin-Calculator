@@ -98,10 +98,15 @@ def _from_df(df: pd.DataFrame, base_structures: list) -> list:
             by_id.get(sid, {"id": sid, "name": str(row["Name"]),
                              "type": internal_type, "dimensions": {}})
         )
+        old_type = base.get("type")
         base["id"]   = sid
         base["name"] = str(row["Name"])
         base["type"] = internal_type
         d = base.setdefault("dimensions", {})
+        # On a Type switch, drop stale dimension keys from the previous type
+        # (e.g. a frustum's dimension_basis/length_top left over on a rectangle).
+        if old_type != internal_type:
+            d.clear()
         h = _f(row["Height (m)"],      1.0)
         w = _f(row["Water Depth (m)"], 0.5)
 

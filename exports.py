@@ -14,13 +14,22 @@ import os
 def _raw_dim_string(dims: dict, stype: str) -> str:
     """Return a compact human-readable string of the original input dimensions."""
     if stype == 'frustum':
-        lb = dims.get('length_bottom', '')
-        wb = dims.get('width_bottom', '')
+        # Show whichever dimension the user actually entered. For a top-basis
+        # frustum length_bottom/width_bottom are None (derived), so reading them
+        # would print "L=None"; use the top values and label them instead.
+        if dims.get('dimension_basis') == 'top':
+            lb = dims.get('length_top', '')
+            wb = dims.get('width_top', '')
+            ltag, wtag = 'L_top', 'W_top'
+        else:
+            lb = dims.get('length_bottom', '')
+            wb = dims.get('width_bottom', '')
+            ltag, wtag = 'L', 'W'
         h  = dims.get('total_height', '')
         sl = dims.get('slope_uniform') if not dims.get('uneven_slopes_enabled') \
              else f"N{dims.get('slope_north',0)} S{dims.get('slope_south',0)} " \
                   f"E{dims.get('slope_east',0)} W{dims.get('slope_west',0)}"
-        return f"L={lb} W={wb} h={h} slope={sl}"
+        return f"{ltag}={lb} {wtag}={wb} h={h} slope={sl}"
     if stype == 'rectangular':
         return (f"L={dims.get('length_internal','')} "
                 f"W={dims.get('width_internal','')} "
