@@ -35,9 +35,16 @@ def _to_df(structures: list) -> pd.DataFrame:
             df_type = t
             slope_str = ""
 
+        measured = None
         if t == "frustum":
-            length = str(d.get("length_bottom", ""))
-            width  = str(d.get("width_bottom",  ""))
+            if d.get("dimension_basis", "bottom") == "top":
+                length = str(d.get("length_top", ""))
+                width  = str(d.get("width_top",  ""))
+                measured = "Top"
+            else:
+                length = str(d.get("length_bottom", ""))
+                width  = str(d.get("width_bottom",  ""))
+                measured = "Bottom"
             wall   = 0.0
         elif t == "rectangular":
             length = str(d.get("length_internal", ""))
@@ -55,6 +62,7 @@ def _to_df(structures: list) -> pd.DataFrame:
             "Type":             df_type,
             "Length / Diam (int.)": length,
             "Width":            width,
+            "Measured at":      measured,
             "Height (m)":       _f(d.get("total_height")),
             "Water Depth (m)":  _f(d.get("water_depth")),
             "Underdrain (m)":   _f(d.get("underdrain_height"), 0.0),
@@ -98,8 +106,19 @@ def _from_df(df: pd.DataFrame, base_structures: list) -> list:
         w = _f(row["Water Depth (m)"], 0.5)
 
         if df_type in ("frustum", "uneven frustum"):
-            d["length_bottom"]    = str(row["Length / Diam (int.)"])
-            d["width_bottom"]     = str(row["Width"])
+            measured = str(row.get("Measured at") or "Bottom").strip().lower()
+            if measured == "top":
+                d["dimension_basis"] = "top"
+                d["length_top"]    = str(row["Length / Diam (int.)"])
+                d["width_top"]     = str(row["Width"])
+                d["length_bottom"] = None
+                d["width_bottom"]  = None
+            else:
+                d["dimension_basis"] = "bottom"
+                d["length_bottom"] = str(row["Length / Diam (int.)"])
+                d["width_bottom"]  = str(row["Width"])
+                d["length_top"]    = None
+                d["width_top"]     = None
             d["total_height"]     = h
             d["water_depth"]      = w
             d["underdrain_height"] = _f(row.get("Underdrain (m)"), 0.0)
