@@ -70,6 +70,18 @@ def _resolve_frustum_dims(dims: dict, slopes: tuple | None = None) -> tuple:
     return l_bot, w_bot, l_top, w_top
 
 
+def frustum_basis_error(dims: dict) -> str | None:
+    """Return a human-readable reason if a top-basis frustum's derived bottom is
+    non-positive, else None. Pure helper used by the UI for per-row validation."""
+    if dims.get('dimension_basis', 'bottom') != 'top':
+        return None
+    l_bot, w_bot, _l_top, _w_top = _resolve_frustum_dims(dims)
+    if l_bot <= 0 or w_bot <= 0:
+        return ("top dimensions too small for the slope × height "
+                "— derived bottom ≤ 0")
+    return None
+
+
 # ---------------------------------------------------------------------------
 # 3. Volume Formulae
 # ---------------------------------------------------------------------------

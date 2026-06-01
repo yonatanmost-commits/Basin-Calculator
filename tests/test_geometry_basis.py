@@ -57,3 +57,20 @@ def test_top_basis_uneven_slopes():
     assert math.isclose(g["w_bottom"], 10.0)
     assert math.isclose(g["l_top"], 30.0)
     assert math.isclose(g["w_top"], 17.5)
+
+
+def test_basis_error_none_for_bottom_basis():
+    assert geometry.frustum_basis_error(_base_frustum()) is None
+
+
+def test_basis_error_none_for_valid_top():
+    dims = _base_frustum(dimension_basis="top", length_top=30.0, width_top=20.0)
+    assert geometry.frustum_basis_error(dims) is None
+
+
+def test_basis_error_flags_nonpositive_derived_bottom():
+    # top too small: l_bot = 8 - 5*(1+1) = -2  -> error
+    dims = _base_frustum(dimension_basis="top", length_top=8.0, width_top=20.0)
+    msg = geometry.frustum_basis_error(dims)
+    assert msg is not None
+    assert "derived bottom" in msg
