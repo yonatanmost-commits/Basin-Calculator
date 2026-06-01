@@ -36,6 +36,36 @@ def _resolve_slopes(dims: dict) -> tuple:
     return s, s, s, s
 
 
+def _resolve_frustum_dims(dims: dict) -> tuple:
+    """Return (l_bot, w_bot, l_top, w_top) honoring dimension_basis.
+
+    basis 'bottom' (default): entered length_bottom/width_bottom; top projected
+    by slope (or an explicit length_top/width_top override if both present).
+    basis 'top': entered length_top/width_top; bottom derived by subtracting the
+    slope projection.
+    """
+    h = parse_dim(dims['total_height'])
+    s_n, s_s, s_e, s_w = _resolve_slopes(dims)
+    basis = dims.get('dimension_basis', 'bottom')
+
+    if basis == 'top':
+        l_top = parse_dim(dims['length_top'])
+        w_top = parse_dim(dims['width_top'])
+        l_bot = l_top - h * (s_w + s_e)
+        w_bot = w_top - h * (s_s + s_n)
+        return l_bot, w_bot, l_top, w_top
+
+    l_bot = parse_dim(dims['length_bottom'])
+    w_bot = parse_dim(dims['width_bottom'])
+    if dims.get('length_top') is not None and dims.get('width_top') is not None:
+        l_top = parse_dim(dims['length_top'])
+        w_top = parse_dim(dims['width_top'])
+    else:
+        l_top = l_bot + h * (s_w + s_e)
+        w_top = w_bot + h * (s_s + s_n)
+    return l_bot, w_bot, l_top, w_top
+
+
 # ---------------------------------------------------------------------------
 # 3. Volume Formulae
 # ---------------------------------------------------------------------------
@@ -46,21 +76,12 @@ def _prismatoid_volume(a_bot: float, a_top: float, h: float) -> float:
 
 
 def _compute_frustum(dims: dict) -> dict:
-    l_bot = parse_dim(dims['length_bottom'])
-    w_bot = parse_dim(dims['width_bottom'])
     h     = parse_dim(dims['total_height'])
     d     = parse_dim(dims['water_depth'])
     ud    = min(parse_dim(dims.get('underdrain_height') or 0.0), d)
 
     s_n, s_s, s_e, s_w = _resolve_slopes(dims)
-
-    # Top boundary — explicit override or slope-projected
-    if dims.get('length_top') is not None and dims.get('width_top') is not None:
-        l_top = parse_dim(dims['length_top'])
-        w_top = parse_dim(dims['width_top'])
-    else:
-        l_top = l_bot + h * s_w + h * s_e
-        w_top = w_bot + h * s_s + h * s_n
+    l_bot, w_bot, l_top, w_top = _resolve_frustum_dims(dims)
 
     a_bot   = l_bot * w_bot
     a_top   = l_top * w_top
