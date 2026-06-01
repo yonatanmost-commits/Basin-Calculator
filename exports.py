@@ -168,6 +168,12 @@ def _safe_float(v, default=0.0):
         return default
 
 
+def _basins_col_map(ws, header_row: int) -> dict:
+    """Return {header_name: 0-based_index} from the header row of a Basins sheet."""
+    cells = next(ws.iter_rows(min_row=header_row, max_row=header_row, values_only=True))
+    return {str(v).strip(): i for i, v in enumerate(cells) if v is not None}
+
+
 def read_basins_sheet(file_bytes: bytes) -> list:
     """Parse the Basins sheet from uploaded workbook bytes → list of structure dicts."""
     import io
@@ -181,7 +187,7 @@ def read_basins_sheet(file_bytes: bytes) -> list:
         raise ValueError(f"Sheet '{BASINS_SHEET}' not found in uploaded workbook.")
     ws = wb[BASINS_SHEET]
 
-    # Locate header row by 'ID' sentinel
+    # Locate header row by 'ID' sentinel in column A
     header_row = None
     for i, row in enumerate(ws.iter_rows(min_col=1, max_col=1, values_only=True), start=1):
         if str(row[0]).strip() == 'ID':
@@ -190,32 +196,46 @@ def read_basins_sheet(file_bytes: bytes) -> list:
     if header_row is None:
         raise ValueError("Could not find header row (cell with 'ID') in Basins sheet.")
 
+    # Map column names → indices so the reader is robust to column reordering
+    # and to files created before the Underdrain column was added.
+    cmap = _basins_col_map(ws, header_row)
+
+    def _col(row, *names, default=None):
+        for name in names:
+            idx = cmap.get(name)
+            if idx is not None and idx < len(row):
+                v = row[idx]
+                if v is not None:
+                    return v
+        return default
+
     structures = []
     for row in ws.iter_rows(min_row=header_row + 1, values_only=True):
-        sid = str(row[0]).strip() if row[0] is not None else ''
+        sid = str(_col(row, 'ID', default='')).strip()
         if not sid or sid.lower() == 'none':
             continue
 
-        name    = str(row[1]) if row[1] is not None else sid
-        df_type = str(row[2]).strip().lower() if row[2] is not None else 'frustum'
-        length  = str(row[3]) if row[3] is not None else ''
-        width   = str(row[4]) if row[4] is not None else ''
-        height  = _safe_float(row[5], 1.0)
-        depth   = _safe_float(row[6], 0.5)
-        ud      = _safe_float(row[7], 0.0)
-        wall_t  = _safe_float(row[8], 0.0)
-        slope   = str(row[9]) if row[9] is not None else '1.0'
-        x_pos   = row[10]
-        y_pos   = _safe_float(row[11], 0.0)
+        name    = str(_col(row, 'Name', default=sid))
+        df_type = str(_col(row, 'Type', default='frustum')).strip().lower()
+        # Accept both 'Width (int.)' (template header) and plain 'Width' (app table header)
+        length  = str(_col(row, 'Length / Diam (int.)', default=''))
+        width   = str(_col(row, 'Width (int.)', 'Width', default=''))
+        height  = _safe_float(_col(row, 'Height (m)'),     1.0)
+        depth   = _safe_float(_col(row, 'Water Depth (m)'), 0.5)
+        ud      = _safe_float(_col(row, 'Underdrain (m)'),  0.0)
+        wall_t  = _safe_float(_col(row, 'Wall Thick (m)'),  0.0)
+        slope   = str(_col(row, 'Slope', default='1.0'))
+        x_raw   = _col(row, 'X (m)')
+        y_pos   = _safe_float(_col(row, 'Y (m)'), 0.0)
 
         internal_type = 'frustum' if df_type in ('frustum', 'uneven frustum') else df_type
         dims = {'total_height': height, 'water_depth': depth}
 
         if df_type in ('frustum', 'uneven frustum'):
-            dims['length_bottom']    = length
-            dims['width_bottom']     = width
+            dims['length_bottom']     = length
+            dims['width_bottom']      = width
             dims['underdrain_height'] = ud
-            dims['wall_thickness']   = 0.0
+            dims['wall_thickness']    = 0.0
             parts = [p.strip() for p in slope.split(';')]
             if len(parts) == 4:
                 dims['uneven_slopes_enabled'] = True
@@ -239,8 +259,8 @@ def read_basins_sheet(file_bytes: bytes) -> list:
             dims['wall_thickness']    = wall_t
 
         s = {'id': sid, 'name': name, 'type': internal_type, 'dimensions': dims}
-        if x_pos is not None:
-            s['x_pos'] = _safe_float(x_pos)
+        if x_raw is not None:
+            s['x_pos'] = _safe_float(x_raw)
         s['y_pos'] = y_pos
         structures.append(s)
 
@@ -307,6 +327,28 @@ def write_results_sheet(file_bytes: bytes, results: list) -> bytes:
     # Column widths
     for col, width in zip('ABCDEFGHIJKL', [10, 28, 14, 14, 14, 14, 14, 14, 12, 12, 12, 12]):
         ws.column_dimensions[col].width = width
+
+    # Write current X/Y positions back into the Basins sheet so re-uploading
+    # the same file restores the layout.
+    if BASINS_SHEET in wb.sheetnames:
+        ws_b = wb[BASINS_SHEET]
+        b_header_row = None
+        for i, row in enumerate(ws_b.iter_rows(min_col=1, max_col=1, values_only=True), start=1):
+            if str(row[0]).strip() == 'ID':
+                b_header_row = i
+                break
+        if b_header_row is not None:
+            cmap = _basins_col_map(ws_b, b_header_row)
+            x_col = cmap.get('X (m)')
+            y_col = cmap.get('Y (m)')
+            if x_col is not None and y_col is not None:
+                result_by_id = {r['id']: r for r in results}
+                for row_cells in ws_b.iter_rows(min_row=b_header_row + 1):
+                    cell_id = str(row_cells[0].value).strip() if row_cells[0].value is not None else ''
+                    if cell_id in result_by_id:
+                        c = result_by_id[cell_id]['coordinates']
+                        row_cells[x_col].value = round(c['x_start'], 2)
+                        row_cells[y_col].value = round(c['y_start'], 2)
 
     out = io.BytesIO()
     wb.save(out)

@@ -112,7 +112,7 @@ def _to_df(structures: list) -> pd.DataFrame:
             width  = ""
             wall   = _f(d.get("wall_thickness"))
 
-        rows.append({
+        row = {
             "Del":              False,
             "ID":               s["id"],
             "Name":             s["name"],
@@ -126,7 +126,8 @@ def _to_df(structures: list) -> pd.DataFrame:
             "Slope":            slope_str,
             "X (m)":            _f(s.get("x_pos"), 0.0),
             "Y (m)":            _f(s.get("y_pos"), 0.0),
-        })
+        }
+        rows.append(row)
     return pd.DataFrame(rows)
 
 
@@ -296,6 +297,12 @@ if not st.session_state.structures:
     st.stop()
 
 # ── Data editor ──────────────────────────────────────────────────────────────
+# IMPORTANT: do not feed recomputed columns (e.g. V_process) into this editor.
+# Streamlit derives a data_editor's widget identity from the *content* of the
+# DataFrame (key_as_main_identity=False). A column whose value changes every
+# rerun therefore makes Streamlit treat the editor as a brand-new widget and
+# discard the user's in-progress edits. Per-structure process volume is shown
+# read-only below, after the geometry is computed.
 edited_df = st.data_editor(
     _to_df(st.session_state.structures),
     width="stretch",
@@ -397,6 +404,18 @@ if ok:
     c4.markdown(_metric_card("Total Excavation Volume", f"{total_ve:,.1f} m³"), unsafe_allow_html=True)
     c5.markdown(_metric_card("Total Concrete Volume",   f"{total_vc:,.1f} m³"), unsafe_allow_html=True)
 
+    # ── Per-structure process volume (read-only) ──────────────────────────
+    # Kept out of the data editor on purpose — see the note at the editor: a
+    # recomputed column there would reset the editor and drop edits mid-typing.
+    vol_df = pd.DataFrame(
+        [{"ID": r["id"], "Name": r["name"],
+          "V_process (m³)": round(r["geometry"]["v_process"], 2)} for r in results]
+    )
+    st.dataframe(
+        vol_df, hide_index=True, width="stretch",
+        column_config={"V_process (m³)": st.column_config.NumberColumn(format="%.1f")},
+    )
+
     # ── Charts ────────────────────────────────────────────────────────────
     left, right = st.columns(2)
 
@@ -413,12 +432,17 @@ if ok:
                               label_visibility="collapsed")
         sel = next(r for r in results if r["id"] == sel_id)
         fig3d = make_3d_box(sel)
+        _vp3d = sel["geometry"]["v_process"]
         fig3d.update_layout(
             title=dict(
-                text=f"<b>3D View — {sel['id']}: {sel['name']}</b>",
+                text=(
+                    f"<b>3D View — {sel['id']}: {sel['name']}</b>"
+                    f"<br><span style='font-size:14px;color:#1a6fbf'>"
+                    f"V_process = {_vp3d:.1f} m³</span>"
+                ),
                 font=dict(size=16),
             ),
-            margin=dict(l=10, r=10, t=30, b=10),
+            margin=dict(l=10, r=10, t=55, b=10),
             height=420,
         )
         st.plotly_chart(fig3d, width="stretch")
