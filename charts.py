@@ -118,11 +118,16 @@ def make_2d_blueprint(results: list) -> go.Figure:
 
         # ID + volumes label
         vc = g.get('v_concrete')
-        vc_line = f"<br>V_c={vc:.1f} m3" if vc is not None else ''
+        vc_line = f"<br>V_c={vc:.1f} m³" if vc is not None else ''
         traces.append(go.Scatter(
             x=[cx], y=[cy],
             mode='text',
-            text=[f"<b>{r['id']}</b><br>V_w={g['v_water']:.1f} m3{vc_line}"],
+            text=[
+                f"<b>{r['id']}</b>"
+                f"<br><b>V_p={g['v_process']:.1f} m³</b>"
+                f"<br>V_w={g['v_water']:.1f} m³"
+                f"{vc_line}"
+            ],
             textfont=dict(size=10, color='#222222'),
             showlegend=False, hoverinfo='skip',
         ))
@@ -283,14 +288,22 @@ def make_3d_box(result: dict) -> go.Figure:
         traces.append(_solid_cylinder_mesh(r_in, 0, d, BLUE_WATER, 0.85, f'Water  d = {d:.2f} m'))
         traces.append(_cylinder_side(r_out, 0, h, GREY_FILL, 0.25, 'Concrete shell'))
 
-    # Concrete volume annotation
+    # Volume annotations: process + water prominently, concrete if present
+    vp = g['v_process']
+    vw = g['v_water']
+    annotations.append(dict(
+        x=0, y=0, z=h * 1.08,
+        text=f'<b>V_process: {vp:.1f} m³</b>  |  V_water: {vw:.1f} m³',
+        showarrow=False,
+        font=dict(size=13, color='#1a3a6b'),
+    ))
     vc = g.get('v_concrete')
     if vc is not None:
         annotations.append(dict(
-            x=0, y=0, z=h * 1.05,
-            text=f'V_concrete: {vc:.2f} m3',
+            x=0, y=0, z=h * 1.20,
+            text=f'V_concrete: {vc:.1f} m³',
             showarrow=False,
-            font=dict(size=12, color='#555555'),
+            font=dict(size=11, color='#555555'),
         ))
 
     fig = go.Figure(traces)

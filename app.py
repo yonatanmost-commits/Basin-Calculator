@@ -14,7 +14,8 @@ import streamlit as st
 
 from charts import make_2d_blueprint, make_3d_box
 from exports import export_cad, export_excel, read_basins_sheet, write_results_sheet
-from geometry import compute_layout_coordinates
+from geometry import compute_layout_coordinates, frustum_basis_error
+from basin_table import _DEFAULT_STRUCTURE, _from_df, _to_df
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Page config
@@ -65,152 +66,6 @@ BASE = _load_base()
 # ─────────────────────────────────────────────────────────────────────────────
 if "structures" not in st.session_state:
     st.session_state.structures = copy.deepcopy(BASE["structures"])
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────────────────────
-def _f(val, default: float = 0.0) -> float:
-    try:
-        v = float(val)
-        return v if v == v else default
-    except (TypeError, ValueError):
-        return default
-
-
-def _to_df(structures: list) -> pd.DataFrame:
-    rows = []
-    for s in structures:
-        d = s["dimensions"]
-        t = s["type"]
-        uneven = bool(d.get("uneven_slopes_enabled", False))
-
-        if t == "frustum" and uneven:
-            df_type = "uneven frustum"
-            sN = _f(d.get("slope_north"))
-            sS = _f(d.get("slope_south"))
-            sE = _f(d.get("slope_east"))
-            sW = _f(d.get("slope_west"))
-            slope_str = f"{sN};{sS};{sE};{sW}"
-        elif t == "frustum":
-            df_type = "frustum"
-            slope_str = str(_f(d.get("slope_uniform")))
-        else:
-            df_type = t
-            slope_str = ""
-
-        if t == "frustum":
-            length = str(d.get("length_bottom", ""))
-            width  = str(d.get("width_bottom",  ""))
-            wall   = 0.0
-        elif t == "rectangular":
-            length = str(d.get("length_internal", ""))
-            width  = str(d.get("width_internal",  ""))
-            wall   = _f(d.get("wall_thickness"))
-        else:  # circular
-            length = str(d.get("diameter_internal", ""))
-            width  = ""
-            wall   = _f(d.get("wall_thickness"))
-
-        rows.append({
-            "Del":              False,
-            "ID":               s["id"],
-            "Name":             s["name"],
-            "Type":             df_type,
-            "Length / Diam (int.)": length,
-            "Width":            width,
-            "Height (m)":       _f(d.get("total_height")),
-            "Water Depth (m)":  _f(d.get("water_depth")),
-            "Underdrain (m)":   _f(d.get("underdrain_height"), 0.0),
-            "Wall Thick (m)":   wall,
-            "Slope":            slope_str,
-            "X (m)":            _f(s.get("x_pos"), 0.0),
-            "Y (m)":            _f(s.get("y_pos"), 0.0),
-        })
-    return pd.DataFrame(rows)
-
-
-def _parse_slope_str(s: str):
-    """Parse slope field: '1.5' → uniform, '0;1.5;1.0;1.0' → (N,S,E,W)."""
-    parts = [p.strip() for p in str(s).split(";")]
-    if len(parts) == 4:
-        return None, [_f(p) for p in parts]  # uneven: [N, S, E, W]
-    return _f(parts[0]), None                  # uniform
-
-
-def _from_df(df: pd.DataFrame, base_structures: list) -> list:
-    by_id = {s["id"]: s for s in base_structures}
-    result = []
-    for _, row in df.iterrows():
-        df_type = str(row["Type"])
-        sid     = str(row["ID"]).strip()
-        if not sid:
-            continue
-
-        # Map display type back to internal type
-        internal_type = "frustum" if df_type in ("frustum", "uneven frustum") else df_type
-        base = copy.deepcopy(
-            by_id.get(sid, {"id": sid, "name": str(row["Name"]),
-                             "type": internal_type, "dimensions": {}})
-        )
-        base["id"]   = sid
-        base["name"] = str(row["Name"])
-        base["type"] = internal_type
-        d = base.setdefault("dimensions", {})
-        h = _f(row["Height (m)"],      1.0)
-        w = _f(row["Water Depth (m)"], 0.5)
-
-        if df_type in ("frustum", "uneven frustum"):
-            d["length_bottom"]    = str(row["Length / Diam (int.)"])
-            d["width_bottom"]     = str(row["Width"])
-            d["total_height"]     = h
-            d["water_depth"]      = w
-            d["underdrain_height"] = _f(row.get("Underdrain (m)"), 0.0)
-            uniform, nsew = _parse_slope_str(row["Slope"])
-            if df_type == "uneven frustum" and nsew:
-                d["uneven_slopes_enabled"] = True
-                d["slope_north"]   = nsew[0]
-                d["slope_south"]   = nsew[1]
-                d["slope_east"]    = nsew[2]
-                d["slope_west"]    = nsew[3]
-                d["slope_uniform"] = None
-            else:
-                d["uneven_slopes_enabled"] = False
-                d["slope_uniform"] = uniform if uniform is not None else 0.0
-                d["slope_north"] = d["slope_south"] = d["slope_east"] = d["slope_west"] = None
-
-        elif df_type == "rectangular":
-            d["length_internal"]  = str(row["Length / Diam (int.)"])
-            d["width_internal"]   = str(row["Width"])
-            d["total_height"]     = h
-            d["water_depth"]      = w
-            d["underdrain_height"] = _f(row.get("Underdrain (m)"), 0.0)
-            d["wall_thickness"]   = _f(row["Wall Thick (m)"])
-
-        else:  # circular
-            d["diameter_internal"]  = str(row["Length / Diam (int.)"])
-            d["total_height"]       = h
-            d["water_depth"]        = w
-            d["underdrain_height"]  = _f(row.get("Underdrain (m)"), 0.0)
-            d["wall_thickness"]     = _f(row["Wall Thick (m)"])
-
-        base["x_pos"] = _f(row.get("X (m)"), 0.0)
-        base["y_pos"] = _f(row.get("Y (m)"), 0.0)
-        result.append(base)
-    return result
-
-
-_DEFAULT_STRUCTURE = {
-    "id": "NEW", "name": "New Structure", "type": "frustum",
-    "dimensions": {
-        "length_bottom": 10.0, "width_bottom": 5.0,
-        "total_height": 3.0, "water_depth": 2.0,
-        "slope_uniform": 1.0, "uneven_slopes_enabled": False,
-        "slope_north": None, "slope_south": None,
-        "slope_east": None, "slope_west": None,
-        "underdrain_height": 0.0, "wall_thickness": 0.0,
-    },
-}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -281,10 +136,17 @@ with st.sidebar:
 st.markdown("### Basin Geometry Engineering Dashboard")
 
 # ── Seed X/Y from auto-layout the first time each structure appears ───────────
-_seed = compute_layout_coordinates({**BASE, "structures": st.session_state.structures})
-for _r, _s in zip(_seed, st.session_state.structures):
-    _s.setdefault("x_pos", round(_r["coordinates"]["x_start"], 2))
-    _s.setdefault("y_pos", round(_r["coordinates"]["y_start"], 2))
+# This cosmetic seed must not crash the page: a structure already in session_state
+# can be geometrically invalid (e.g. a too-small top-basis frustum persisted via
+# Add/Delete). Skip seeding on failure — the per-row validation below the editor
+# reports such structures with a friendly message instead.
+try:
+    _seed = compute_layout_coordinates({**BASE, "structures": st.session_state.structures})
+    for _r, _s in zip(_seed, st.session_state.structures):
+        _s.setdefault("x_pos", round(_r["coordinates"]["x_start"], 2))
+        _s.setdefault("y_pos", round(_r["coordinates"]["y_start"], 2))
+except Exception:
+    pass
 
 # ── Empty state: show only the Add button ────────────────────────────────────
 if not st.session_state.structures:
@@ -296,6 +158,12 @@ if not st.session_state.structures:
     st.stop()
 
 # ── Data editor ──────────────────────────────────────────────────────────────
+# IMPORTANT: do not feed recomputed columns (e.g. V_process) into this editor.
+# Streamlit derives a data_editor's widget identity from the *content* of the
+# DataFrame (key_as_main_identity=False). A column whose value changes every
+# rerun therefore makes Streamlit treat the editor as a brand-new widget and
+# discard the user's in-progress edits. Per-structure process volume is shown
+# read-only below, after the geometry is computed.
 edited_df = st.data_editor(
     _to_df(st.session_state.structures),
     width="stretch",
@@ -308,6 +176,13 @@ edited_df = st.data_editor(
         "Type": st.column_config.SelectboxColumn(
             options=["frustum", "uneven frustum", "rectangular", "circular"],
             required=True,
+        ),
+        "Measured at": st.column_config.SelectboxColumn(
+            options=["Bottom", "Top"],
+            required=False,
+            help="Frustum only. Bottom = entered L/W is the small floor (top "
+                 "derived from slope). Top = entered L/W is the large opening "
+                 "(bottom derived). Ignored for rectangular/circular.",
         ),
         "Height (m)":       st.column_config.NumberColumn(min_value=0.01, step=0.1,  format="%.2f"),
         "Water Depth (m)":  st.column_config.NumberColumn(min_value=0.01, step=0.1,  format="%.2f"),
@@ -351,6 +226,15 @@ try:
     structures = _from_df(edited_df, st.session_state.structures)
     if not structures:
         st.info("Add at least one structure to see results.")
+        st.stop()
+    basis_errors = [
+        f"{s['id']} “{s['name']}”: {msg}"
+        for s in structures
+        if s["type"] == "frustum"
+        and (msg := frustum_basis_error(s["dimensions"]))
+    ]
+    if basis_errors:
+        st.error("Cannot compute geometry:\n\n" + "\n\n".join(basis_errors))
         st.stop()
     results = compute_layout_coordinates({**BASE, "structures": structures})
     # Apply manual X/Y position overrides from the editor
@@ -397,6 +281,31 @@ if ok:
     c4.markdown(_metric_card("Total Excavation Volume", f"{total_ve:,.1f} m³"), unsafe_allow_html=True)
     c5.markdown(_metric_card("Total Concrete Volume",   f"{total_vc:,.1f} m³"), unsafe_allow_html=True)
 
+    # ── Per-structure process volume (read-only) ──────────────────────────
+    # Kept out of the data editor on purpose — see the note at the editor: a
+    # recomputed column there would reset the editor and drop edits mid-typing.
+    def _frustum_dims_label(r: dict) -> tuple:
+        g = r["geometry"]
+        if r["type"] == "frustum":
+            return (f"{g['l_bottom']:.2f} × {g['w_bottom']:.2f}",
+                    f"{g['l_top']:.2f} × {g['w_top']:.2f}")
+        return "", ""
+
+    vol_rows = []
+    for r in results:
+        bot_lbl, top_lbl = _frustum_dims_label(r)
+        vol_rows.append({
+            "ID": r["id"], "Name": r["name"],
+            "Bottom L×W (m)": bot_lbl,
+            "Top L×W (m)": top_lbl,
+            "V_process (m³)": round(r["geometry"]["v_process"], 2),
+        })
+    vol_df = pd.DataFrame(vol_rows)
+    st.dataframe(
+        vol_df, hide_index=True, width="stretch",
+        column_config={"V_process (m³)": st.column_config.NumberColumn(format="%.1f")},
+    )
+
     # ── Charts ────────────────────────────────────────────────────────────
     left, right = st.columns(2)
 
@@ -409,16 +318,21 @@ if ok:
     with right:
         st.markdown("<div style='margin-top:3rem;'></div>", unsafe_allow_html=True)
         st.markdown("<p style='font-size:1rem;font-weight:700;margin:0 0 0.5rem 0;'>3D view — select structure</p>", unsafe_allow_html=True)
-        sel_id = st.selectbox("", options=[r["id"] for r in results], key="sel_3d",
-                              label_visibility="collapsed")
+        sel_id = st.selectbox("Structure for 3D view", options=[r["id"] for r in results],
+                              key="sel_3d", label_visibility="collapsed")
         sel = next(r for r in results if r["id"] == sel_id)
         fig3d = make_3d_box(sel)
+        _vp3d = sel["geometry"]["v_process"]
         fig3d.update_layout(
             title=dict(
-                text=f"<b>3D View — {sel['id']}: {sel['name']}</b>",
+                text=(
+                    f"<b>3D View — {sel['id']}: {sel['name']}</b>"
+                    f"<br><span style='font-size:14px;color:#1a6fbf'>"
+                    f"V_process = {_vp3d:.1f} m³</span>"
+                ),
                 font=dict(size=16),
             ),
-            margin=dict(l=10, r=10, t=30, b=10),
+            margin=dict(l=10, r=10, t=55, b=10),
             height=420,
         )
         st.plotly_chart(fig3d, width="stretch")
