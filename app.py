@@ -318,8 +318,8 @@ if ok:
     with right:
         st.markdown("<div style='margin-top:3rem;'></div>", unsafe_allow_html=True)
         st.markdown("<p style='font-size:1rem;font-weight:700;margin:0 0 0.5rem 0;'>3D view — select structure</p>", unsafe_allow_html=True)
-        sel_id = st.selectbox("", options=[r["id"] for r in results], key="sel_3d",
-                              label_visibility="collapsed")
+        sel_id = st.selectbox("Structure for 3D view", options=[r["id"] for r in results],
+                              key="sel_3d", label_visibility="collapsed")
         sel = next(r for r in results if r["id"] == sel_id)
         fig3d = make_3d_box(sel)
         _vp3d = sel["geometry"]["v_process"]
