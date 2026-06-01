@@ -14,7 +14,7 @@ import streamlit as st
 
 from charts import make_2d_blueprint, make_3d_box
 from exports import export_cad, export_excel, read_basins_sheet, write_results_sheet
-from geometry import compute_layout_coordinates
+from geometry import compute_layout_coordinates, frustum_basis_error
 from basin_table import _DEFAULT_STRUCTURE, _from_df, _to_df
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -136,10 +136,17 @@ with st.sidebar:
 st.markdown("### Basin Geometry Engineering Dashboard")
 
 # ── Seed X/Y from auto-layout the first time each structure appears ───────────
-_seed = compute_layout_coordinates({**BASE, "structures": st.session_state.structures})
-for _r, _s in zip(_seed, st.session_state.structures):
-    _s.setdefault("x_pos", round(_r["coordinates"]["x_start"], 2))
-    _s.setdefault("y_pos", round(_r["coordinates"]["y_start"], 2))
+# This cosmetic seed must not crash the page: a structure already in session_state
+# can be geometrically invalid (e.g. a too-small top-basis frustum persisted via
+# Add/Delete). Skip seeding on failure — the per-row validation below the editor
+# reports such structures with a friendly message instead.
+try:
+    _seed = compute_layout_coordinates({**BASE, "structures": st.session_state.structures})
+    for _r, _s in zip(_seed, st.session_state.structures):
+        _s.setdefault("x_pos", round(_r["coordinates"]["x_start"], 2))
+        _s.setdefault("y_pos", round(_r["coordinates"]["y_start"], 2))
+except Exception:
+    pass
 
 # ── Empty state: show only the Add button ────────────────────────────────────
 if not st.session_state.structures:
@@ -169,6 +176,13 @@ edited_df = st.data_editor(
         "Type": st.column_config.SelectboxColumn(
             options=["frustum", "uneven frustum", "rectangular", "circular"],
             required=True,
+        ),
+        "Measured at": st.column_config.SelectboxColumn(
+            options=["Bottom", "Top"],
+            required=False,
+            help="Frustum only. Bottom = entered L/W is the small floor (top "
+                 "derived from slope). Top = entered L/W is the large opening "
+                 "(bottom derived). Ignored for rectangular/circular.",
         ),
         "Height (m)":       st.column_config.NumberColumn(min_value=0.01, step=0.1,  format="%.2f"),
         "Water Depth (m)":  st.column_config.NumberColumn(min_value=0.01, step=0.1,  format="%.2f"),
@@ -212,6 +226,15 @@ try:
     structures = _from_df(edited_df, st.session_state.structures)
     if not structures:
         st.info("Add at least one structure to see results.")
+        st.stop()
+    basis_errors = [
+        f"{s['id']} “{s['name']}”: {msg}"
+        for s in structures
+        if s["type"] == "frustum"
+        and (msg := frustum_basis_error(s["dimensions"]))
+    ]
+    if basis_errors:
+        st.error("Cannot compute geometry:\n\n" + "\n\n".join(basis_errors))
         st.stop()
     results = compute_layout_coordinates({**BASE, "structures": structures})
     # Apply manual X/Y position overrides from the editor
@@ -261,10 +284,23 @@ if ok:
     # ── Per-structure process volume (read-only) ──────────────────────────
     # Kept out of the data editor on purpose — see the note at the editor: a
     # recomputed column there would reset the editor and drop edits mid-typing.
-    vol_df = pd.DataFrame(
-        [{"ID": r["id"], "Name": r["name"],
-          "V_process (m³)": round(r["geometry"]["v_process"], 2)} for r in results]
-    )
+    def _frustum_dims_label(r: dict) -> tuple:
+        g = r["geometry"]
+        if r["type"] == "frustum":
+            return (f"{g['l_bottom']:.2f} × {g['w_bottom']:.2f}",
+                    f"{g['l_top']:.2f} × {g['w_top']:.2f}")
+        return "", ""
+
+    vol_rows = []
+    for r in results:
+        bot_lbl, top_lbl = _frustum_dims_label(r)
+        vol_rows.append({
+            "ID": r["id"], "Name": r["name"],
+            "Bottom L×W (m)": bot_lbl,
+            "Top L×W (m)": top_lbl,
+            "V_process (m³)": round(r["geometry"]["v_process"], 2),
+        })
+    vol_df = pd.DataFrame(vol_rows)
     st.dataframe(
         vol_df, hide_index=True, width="stretch",
         column_config={"V_process (m³)": st.column_config.NumberColumn(format="%.1f")},
