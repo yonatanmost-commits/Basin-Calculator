@@ -36,16 +36,17 @@ def _resolve_slopes(dims: dict) -> tuple:
     return s, s, s, s
 
 
-def _resolve_frustum_dims(dims: dict) -> tuple:
+def _resolve_frustum_dims(dims: dict, slopes: tuple | None = None) -> tuple:
     """Return (l_bot, w_bot, l_top, w_top) honoring dimension_basis.
 
     basis 'bottom' (default): entered length_bottom/width_bottom; top projected
     by slope (or an explicit length_top/width_top override if both present).
     basis 'top': entered length_top/width_top; bottom derived by subtracting the
     slope projection.
+    slopes: optional pre-computed (s_n, s_s, s_e, s_w); recomputed from dims if omitted.
     """
     h = parse_dim(dims['total_height'])
-    s_n, s_s, s_e, s_w = _resolve_slopes(dims)
+    s_n, s_s, s_e, s_w = slopes if slopes is not None else _resolve_slopes(dims)
     basis = dims.get('dimension_basis', 'bottom')
 
     if basis == 'top':
@@ -53,6 +54,9 @@ def _resolve_frustum_dims(dims: dict) -> tuple:
         w_top = parse_dim(dims['width_top'])
         l_bot = l_top - h * (s_w + s_e)
         w_bot = w_top - h * (s_s + s_n)
+        # Precondition: caller must validate l_bot > 0 and w_bot > 0. When the top
+        # is too small for slope×height these go non-positive; the UI checks this
+        # via geometry.frustum_basis_error (added in a later task) before compute.
         return l_bot, w_bot, l_top, w_top
 
     l_bot = parse_dim(dims['length_bottom'])
@@ -81,7 +85,7 @@ def _compute_frustum(dims: dict) -> dict:
     ud    = min(parse_dim(dims.get('underdrain_height') or 0.0), d)
 
     s_n, s_s, s_e, s_w = _resolve_slopes(dims)
-    l_bot, w_bot, l_top, w_top = _resolve_frustum_dims(dims)
+    l_bot, w_bot, l_top, w_top = _resolve_frustum_dims(dims, (s_n, s_s, s_e, s_w))
 
     a_bot   = l_bot * w_bot
     a_top   = l_top * w_top

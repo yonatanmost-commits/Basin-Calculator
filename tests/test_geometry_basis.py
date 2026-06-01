@@ -55,3 +55,5 @@ def test_top_basis_uneven_slopes():
     # l_bot = 30 - 5*(s_w+s_e)=30-5*2=20 ; w_bot = 17.5 - 5*(s_s+s_n)=17.5-7.5=10
     assert math.isclose(g["l_bottom"], 20.0)
     assert math.isclose(g["w_bottom"], 10.0)
+    assert math.isclose(g["l_top"], 30.0)
+    assert math.isclose(g["w_top"], 17.5)
